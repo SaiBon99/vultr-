@@ -86,3 +86,28 @@ test("crawl page submits a URL and shows the sandbox result", async ({
   await expect(page.getByRole("heading", { name: "Mock page" })).toBeVisible();
   await expect(page.getByText("network none")).toBeVisible();
 });
+
+test("crawl page shows run_id and an expandable run log", async ({ page }) => {
+  await page.goto("/ui/crawl");
+  await page.getByRole("button", { name: "Crawl" }).click();
+  await expect(page.getByTestId("run-id")).toBeVisible();
+  await page.getByText("Run log", { exact: true }).click();
+  await expect(page.getByTestId("run-log-line").first()).toBeVisible();
+  await expect(page.getByTestId("run-log-line").last()).toContainText(
+    "run end",
+  );
+});
+
+test("failed crawl shows run_id from the error body and its run log", async ({
+  page,
+}) => {
+  await page.goto("/ui/crawl");
+  await page.getByLabel("Page URL").fill("https://nowhere.invalid");
+  await page.getByRole("button", { name: "Crawl" }).click();
+  await expect(page.getByRole("alert")).toContainText("fetch_failed");
+  await expect(page.getByTestId("run-id")).toBeVisible();
+  await page.getByText("Run log", { exact: true }).click();
+  await expect(page.getByTestId("run-log-line").last()).toContainText(
+    "fetch_failed",
+  );
+});

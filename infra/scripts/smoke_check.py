@@ -1,8 +1,10 @@
-"""Smoke check: DB, vector extension, 4 tables, role isolation, audit append-only, S3 bucket. Exit 1 on any failure.
+"""Smoke check: DB, vector extension, 4 tables, role isolation, audit append-only, S3 bucket, logs/ round trip.
+Exit 1 on any failure.
 
 Run: uv run --no-project --with "psycopg[binary]" --with boto3 python infra/scripts/smoke_check.py
 """
 import sys
+import uuid
 
 import boto3
 import psycopg
@@ -60,20 +62,38 @@ def db_checks() -> None:
           lambda: denied(_env.proxy_url(), "UPDATE audit_events SET event_type = event_type"))
 
 
-def s3_check() -> str:
-    s3 = boto3.client(
+def s3_client():
+    return boto3.client(
         "s3", endpoint_url=_env.get("S3_ENDPOINT_URL", "http://localhost:9000"),
         aws_access_key_id=_env.get("S3_ACCESS_KEY", "minioadmin"),
         aws_secret_access_key=_env.get("S3_SECRET_KEY", "minioadmin"),
-        region_name="us-east-1", config=Config(connect_timeout=5, retries={"max_attempts": 1}))
-    bucket = _env.get("S3_BUCKET", "quarantine-receipts")
-    s3.head_bucket(Bucket=bucket)
-    return bucket
+        region_name=_env.get("S3_REGION", "us-east-1"),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"},
+                      connect_timeout=5, retries={"max_attempts": 1}))
+
+
+BUCKET = _env.get("S3_BUCKET", "quarantine-receipts")
+
+
+def s3_check() -> str:
+    s3_client().head_bucket(Bucket=BUCKET)
+    return BUCKET
+
+
+def s3_logs_check() -> str:
+    s3, key, body = s3_client(), f"logs/_probe/{uuid.uuid4()}.jsonl", b'{"probe":true}\n'
+    s3.put_object(Bucket=BUCKET, Key=key, Body=body)
+    try:
+        assert s3.get_object(Bucket=BUCKET, Key=key)["Body"].read() == body, "bytes differ"
+    finally:
+        s3.delete_object(Bucket=BUCKET, Key=key)
+    return key
 
 
 def main() -> int:
     db_checks()
     check("s3 bucket reachable", s3_check)
+    check("s3 logs/ put-get-delete", s3_logs_check)
     for name, ok, detail in results:
         print(f"{'PASS' if ok else 'FAIL'}  {name}" + (f"  ({detail})" if detail else ""))
     return 0 if all(ok for _, ok, _ in results) else 1

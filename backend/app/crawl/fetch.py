@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from urllib.robotparser import RobotFileParser
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -19,6 +20,7 @@ log = logging.getLogger("app.crawl")
 MAX_REDIRECTS = 3
 HOP_TIMEOUT_S = 10.0
 USER_AGENT = "memory-quarantine-crawler/0.2"
+ROBOTS_UA = "memory-quarantine-crawler"  # the product token robots.txt rules are matched against
 REDIRECT_CODES = frozenset({301, 302, 303, 307, 308})
 TEXT_TYPES = ("text/html", "application/xhtml+xml", "text/")
 
@@ -51,6 +53,19 @@ async def fetch_page(target: Target, guard: PublicTargetGuard, max_bytes: int) -
             target = hop
     _log_failure(first_url, "redirect cap")
     raise CrawlError(502, "fetch_failed", f"more than {MAX_REDIRECTS} redirects")
+
+
+async def load_robots(origin: str, guard: PublicTargetGuard, max_bytes: int) -> RobotFileParser:
+    """robots.txt for one origin ("scheme://host[:port]"). Missing, refused or unreachable means
+    no rules: parse([]) marks the file as read with nothing disallowed."""
+    rp = RobotFileParser()
+    try:
+        target = await guard.check(f"{origin}/robots.txt")
+        page = await fetch_page(target, guard, max_bytes)
+        rp.parse(page.text.splitlines())
+    except (UnsafeTarget, CrawlError):
+        rp.parse([])
+    return rp
 
 
 async def _hop(

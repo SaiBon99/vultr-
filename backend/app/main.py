@@ -16,8 +16,9 @@ from app.crawl.service import Slots
 from app.db import Database
 from app.deps import ApiError
 from app.judge import OpenAIJudge
-from app.receipts import S3ObjectStore, Signer
+from app.receipts import Signer
 from app.routes import audit, crawl, proxy, public, quarantine
+from app.storage import S3ObjectStore
 
 FRONTEND_BUILD = Path(__file__).resolve().parents[2] / "frontend" / "build"
 
@@ -76,6 +77,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         body = {"detail": str(exc.detail)}
         if isinstance(exc, ApiError) and exc.code:
             body["code"] = exc.code
+        if isinstance(exc, ApiError) and exc.run_id:
+            body["run_id"] = exc.run_id
         return JSONResponse(body, status_code=exc.status_code, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)

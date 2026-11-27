@@ -25,6 +25,9 @@ SANDBOX_USER = "65534:65534"  # nobody:nogroup, regardless of the image's USER
 PIDS_LIMIT = 64
 TMPFS = "/tmp:rw,noexec,nosuid,nodev,size=16m"
 LABEL = "memory-quarantine.crawl=1"
+STDERR_LIMIT = 64 * 1024  # bytes of sandbox stderr kept in the run log (cut after redaction)
+STDERR_SLACK = 1024  # extra bytes read so a secret across the 64 KB mark is still redacted whole
+STDERR_GRACE_S = 1.0  # how long to wait for stderr EOF after the process exits
 
 
 @dataclass(frozen=True)
@@ -46,10 +49,25 @@ class ProcessRun:
     """One running agent process. send/receive are line-framed JSON; cleanup is idempotent."""
 
     LINE_LIMIT = 1_000_000  # bytes per message line
+    image_id: str | None = None
 
     def __init__(self, proc: asyncio.subprocess.Process) -> None:
         self.proc = proc
         self.spoke = False  # the agent wrote at least one line
+        self._stderr = bytearray()
+        self.stderr_truncated = False
+        # Drained for the whole run so a noisy sandbox can never block on a full pipe.
+        self._stderr_task = (
+            asyncio.create_task(self._drain_stderr()) if proc.stderr is not None else None
+        )
+
+    async def _drain_stderr(self) -> None:
+        assert self.proc.stderr is not None
+        while chunk := await self.proc.stderr.read(65536):
+            room = STDERR_LIMIT + STDERR_SLACK - len(self._stderr)
+            if len(chunk) > room:
+                self.stderr_truncated = True
+            self._stderr += chunk[: max(room, 0)]
 
     async def send(self, message: dict) -> None:
         assert self.proc.stdin is not None
@@ -70,11 +88,30 @@ class ProcessRun:
     async def sandbox_ids(self) -> tuple[str, str]:
         raise NotImplementedError
 
+    async def stderr_text(self) -> tuple[str, bool]:
+        """Captured stderr (at most STDERR_LIMIT + STDERR_SLACK bytes), and whether more was cut."""
+        await self._stop_stderr()
+        return self._stderr.decode("utf-8", errors="replace"), self.stderr_truncated
+
+    async def _stop_stderr(self) -> None:
+        """Let the drain reach EOF (bounded by STDERR_GRACE_S), then cancel it. Idempotent."""
+        task = self._stderr_task
+        if task is None or task.done():
+            return
+        if self.proc.returncode is not None:
+            with contextlib.suppress(TimeoutError, Exception):
+                await asyncio.wait_for(asyncio.shield(task), STDERR_GRACE_S)
+        if not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+
     async def cleanup(self) -> None:
         if self.proc.returncode is None:
             with contextlib.suppress(ProcessLookupError):
                 self.proc.kill()
             await self.proc.wait()
+        await self._stop_stderr()
 
 
 class Runner(Protocol):
@@ -157,7 +194,7 @@ class DockerRunner:
             *self.argv(image_id=image_id, name=name, cidfile=cidfile),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
             limit=ProcessRun.LINE_LIMIT,
         )
         return DockerRun(proc, name=name, cidfile=cidfile, image_id=image_id, workdir=workdir)

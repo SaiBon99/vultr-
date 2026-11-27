@@ -7,22 +7,26 @@
     type CrawlResult,
   } from "#lib/api/index.js";
   import Badge from "#lib/components/Badge.svelte";
+  import RunLog from "#lib/components/RunLog.svelte";
 
   let url = $state("https://example.com");
   let token = $state(getReviewerToken() ?? "");
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let errorRunId = $state<string | null>(null);
   let result = $state<CrawlResult | null>(null);
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     busy = true;
     error = null;
+    errorRunId = null;
     result = null;
     setReviewerToken(token.trim() || null);
     try {
       result = await getApi().crawl({ url: url.trim() });
     } catch (err) {
+      errorRunId = err instanceof ApiError ? (err.runId ?? null) : null;
       error =
         err instanceof ApiError
           ? `${err.message}${err.code ? ` (${err.code})` : ""}`
@@ -82,7 +86,20 @@
 
 <div aria-live="polite" class="mt-lg grid gap-md">
   {#if error}
-    <p role="alert" class="rounded-lg border border-destructive p-md text-destructive">{error}</p>
+    <div role="alert" class="grid gap-2xs rounded-lg border border-destructive p-md">
+      <p class="text-destructive">{error}</p>
+      {#if errorRunId}
+        <p class="text-sm">
+          <span class="text-muted-foreground">Run id</span>
+          <span class="font-mono break-all" data-testid="run-id">{errorRunId}</span>
+        </p>
+      {/if}
+    </div>
+    {#if errorRunId}
+      {#key errorRunId}
+        <RunLog runId={errorRunId} />
+      {/key}
+    {/if}
   {/if}
 
   {#if result}
@@ -119,7 +136,16 @@
         <dd class="font-mono break-all">{result.inference_id}</dd>
         <dt class="text-muted-foreground">Elapsed</dt>
         <dd>{result.elapsed_ms} ms</dd>
+        <dt class="text-muted-foreground">Run id</dt>
+        <dd class="font-mono break-all" data-testid="run-id">{result.run_id}</dd>
+        <dt class="text-muted-foreground">Log</dt>
+        <dd class="font-mono break-all">{result.log_uri ?? "not stored"}</dd>
       </dl>
     </section>
+    {#if result.log_uri}
+      {#key result.run_id}
+        <RunLog runId={result.run_id} />
+      {/key}
+    {/if}
   {/if}
 </div>

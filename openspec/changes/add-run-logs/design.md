@@ -105,7 +105,7 @@ Rules:
   - `Error`: optional `run_id: {type: string, format: uuid}`.
   - New path `/crawl/runs/{run_id}/log` (tag `crawl`, `ReviewerToken`) with responses 200 (`application/x-ndjson`, `type: string`), 401, 404 and 503 (`Error`).
   - The `/crawl` description says a transcript is written for every started run.
-- `README.md`: wire rule 5, covering the run-log layout, line types, caps, redaction order (redact, then hash) and the `sha256` metadata. Link it from this design.
+- `README.md`: wire rule 6, covering the run-log layout, line types, caps, redaction order (redact, then hash) and the `sha256` metadata. Link it from this design.
 - Fixtures: if `contracts/fixtures/` or `check_contracts.py` validate `CrawlResult`, update or add a fixture with `run_id` and `log_uri`. Run the contracts command from the root `AGENTS.md`.
 
 ## Infra (`infra/`, Infra agent)

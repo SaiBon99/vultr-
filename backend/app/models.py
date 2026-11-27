@@ -48,6 +48,7 @@ class Wire(BaseModel):
 class Error(Wire):
     detail: str
     code: str | None = None
+    run_id: UUID | None = None
 
 
 class HealthChecks(Wire):
@@ -256,6 +257,14 @@ class CrawlUsage(Wire):
     total_tokens: int | None = Field(default=None, ge=0)
 
 
+class CrawlPage(Wire):
+    url: str
+    final_url: str | None
+    status: Literal["ok", "skipped", "failed"]
+    title: str | None = Field(default=None, max_length=300)
+    error: str | None = None
+
+
 class CrawlResult(Wire):
     url: str
     final_url: str
@@ -267,3 +276,6 @@ class CrawlResult(Wire):
     usage: CrawlUsage | None
     elapsed_ms: int = Field(ge=0)
     sandbox: CrawlSandbox
+    run_id: UUID
+    log_uri: str | None
+    pages: list[CrawlPage]

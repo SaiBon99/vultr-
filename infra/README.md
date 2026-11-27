@@ -10,6 +10,12 @@ Postgres 16 + pgvector on `:5432`, MinIO on `:9000` (console `:9001`, default `m
 
 Fresh start: `docker compose -f infra/docker-compose.yml down -v`.
 
+## Object Storage (receipts + run logs)
+```bash
+uv run --no-project --with boto3 python infra/scripts/setup_object_storage.py [--logs-expire-days 30]
+```
+Creates `S3_BUCKET` if missing (exit 1 if the name belongs to someone else), warns on public ACL grants, optionally sets one lifecycle rule `expire-run-logs` on `logs/` only (keeps other rules; warns if the endpoint rejects it), then puts, gets and deletes a probe under `logs/_probe/`. Safe to repeat; prints `changes: none` when nothing changed. Never prints keys.
+
 ## Receipt key
 ```bash
 uv run --no-project --with cryptography python infra/scripts/keygen_ed25519.py   # --force to overwrite
@@ -22,7 +28,8 @@ Writes `infra/keys/receipt_ed25519.pem` (git-ignored); prints public key base64 
 ## Vultr
 - `scripts/vultr_provision.sh` : dry-run by default, `--apply` creates billable resources.
 - `scripts/setup_vultr_vx1.sh` : run on the VX1 VM (KVM check, uv, node/pnpm, msb, systemd unit).
-- Point `DATABASE_URL_*` and `S3_*` in `infra/.env` at the managed services, then `apply_sql.py` and `smoke_check.py`.
+- Point `DATABASE_URL_*` and `S3_*` in `infra/.env` at the managed services, then `apply_sql.py`, `setup_object_storage.py` and `smoke_check.py`. `vultr_provision.sh` looks up the Object Storage cluster and default tier for `--region` (or `VULTR_OBJ_CLUSTER_ID` / `VULTR_OBJ_TIER_ID`).
+- `scripts/push_env.sh --host HOST --env-file infra/.env.production [--dry-run]` : as root, replaces the service env `/opt/vultr-app/.env`. Keep prod values in the git-ignored `infra/.env.production`; `infra/.env` stays local (MinIO). Strips laptop-only keys (`DATABASE_URL_ADMIN`, `*_DB_PASSWORD`, `VULTR_API_KEY`), requires the backend's secrets, pins `RECEIPT_SIGNING_KEY_PATH` to `/opt/vultr-app/receipt_ed25519.pem` (generated on the VM once), checks both DB URLs connect before swapping, and restores the previous file unless `/health` reports db and object_storage `ok`. Prints key names only. `publish.sh` ships code and never touches env.
 
 ## Crawl sandbox (POST /crawl)
 ```bash

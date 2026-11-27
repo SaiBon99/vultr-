@@ -40,8 +40,29 @@ export interface paths {
      *     Inference, CRAWLER_MODEL, at most 512 output tokens; the key never enters the container).
      *     At most 2 runs at once; a third concurrent request gets 503 sandbox_busy. One attempt, no retry.
      *     The call blocks until the run ends. /crawl never writes memory.
+     *     Every run that took a sandbox slot gets a run_id and writes one redacted NDJSON transcript to Object Storage
+     *     (contracts/README.md wire rule 6), on success and on failure. The upload is best effort and never changes the
+     *     response: log_uri is null when storage is missing or the upload failed. 502 and 504 bodies carry run_id;
+     *     422 and 503 refusals happen before a slot is taken and carry none.
      */
     post: operations["crawlPage"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/crawl/runs/{run_id}/log": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The stored transcript of one /crawl run, byte for byte as written (contracts/README.md wire rule 6). */
+    get: operations["getCrawlRunLog"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -323,6 +344,10 @@ export interface components {
       usage: components["schemas"]["CrawlUsage"] | null;
       elapsed_ms: number;
       sandbox: components["schemas"]["CrawlSandbox"];
+      /** Format: uuid */
+      run_id: string;
+      /** @description s3://<bucket>/logs/crawl/<run_id>.jsonl, or null when Object Storage is missing or the upload failed */
+      log_uri: string | null;
     };
     DemoRunRequest: {
       /**
@@ -372,6 +397,11 @@ export interface components {
       detail: string;
       /** @description Machine-readable code, e.g. reason_required, already_decided, payload_hash_mismatch, naive_disabled */
       code?: string;
+      /**
+       * Format: uuid
+       * @description Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log
+       */
+      run_id?: string;
     };
     /** @enum {string} */
     HealthCheck: "ok" | "error" | "skipped";
@@ -778,6 +808,47 @@ export interface operations {
       };
       /** @description The sandbox hit SANDBOX_TIMEOUT_S (clock starts at container start) and was killed and removed (code timeout) */
       504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  getCrawlRunLog: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description NDJSON, one JSON object per line; run_start first, run_end last */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/x-ndjson": string;
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No transcript for this run_id (code not_found) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description Object Storage is not configured on this host (code storage_missing), or it did not answer (code storage_unavailable) */
+      503: {
         headers: {
           [name: string]: unknown;
         };

@@ -1,13 +1,14 @@
 openapi: 3.1.0
 info:
   title: Memory Quarantine Proxy
-  version: 0.2.1
+  version: 0.2.3
   description: |
     FROZEN Phase 0 contract. Owner: Coordinator. Backend implements it; frontend consumes it.
     Change only through an OpenSpec change in openspec/changes/.
     Canonical JSON, hash-chain, receipt-signing rules, Stage 0 and the rulebook: contracts/README.md.
     0.2.0 (D5, openspec/changes/refine-verdicts-and-rulebook): verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED, 13 rule flags, risk_score.
     0.2.1 (openspec/changes/add-crawl-endpoint): adds POST /crawl. Additive only; no existing shape changes.
+    0.2.2 (openspec/changes/add-run-logs): adds CrawlResult.run_id and log_uri, optional Error.run_id, and GET /crawl/runs/{run_id}/log. Additive only.
 servers:
   - url: http://localhost:8000
     description: Local (FastAPI also serves frontend/build at /ui)
@@ -48,6 +49,10 @@ paths:
         Inference, CRAWLER_MODEL, at most 512 output tokens; the key never enters the container).
         At most 2 runs at once; a third concurrent request gets 503 sandbox_busy. One attempt, no retry.
         The call blocks until the run ends. /crawl never writes memory.
+        Every run that took a sandbox slot gets a run_id and writes one redacted NDJSON transcript to Object Storage
+        (contracts/README.md wire rule 6), on success and on failure. The upload is best effort and never changes the
+        response: log_uri is null when storage is missing or the upload failed. 502 and 504 bodies carry run_id;
+        422 and 503 refusals happen before a slot is taken and carry none.
       security:
         - ReviewerToken: []
       requestBody:
@@ -84,6 +89,35 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '504':
           description: The sandbox hit SANDBOX_TIMEOUT_S (clock starts at container start) and was killed and removed (code timeout)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /crawl/runs/{run_id}/log:
+    get:
+      tags: [crawl]
+      operationId: getCrawlRunLog
+      summary: The stored transcript of one /crawl run, byte for byte as written (contracts/README.md wire rule 6).
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: NDJSON, one JSON object per line; run_start first, run_end last
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: No transcript for this run_id (code not_found)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Object Storage is not configured on this host (code storage_missing), or it did not answer (code storage_unavailable)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -428,7 +462,7 @@ components:
     CrawlResult:
       type: object
       additionalProperties: false
-      required: [url, final_url, title, summary, key_points, model, inference_id, usage, elapsed_ms, sandbox]
+      required: [url, final_url, title, summary, key_points, model, inference_id, usage, elapsed_ms, sandbox, run_id, log_uri, pages]
       properties:
         url: { type: string, format: uri }
         final_url: { type: string, format: uri, description: URL after redirects; every hop was SSRF-checked }
@@ -446,6 +480,24 @@ components:
             - { type: 'null' }
         elapsed_ms: { type: integer, minimum: 0 }
         sandbox: { $ref: '#/components/schemas/CrawlSandbox' }
+        run_id: { type: string, format: uuid }
+        log_uri:
+          type: [string, 'null']
+          description: s3://<bucket>/logs/crawl/<run_id>.jsonl, or null when Object Storage is missing or the upload failed
+        pages:
+          type: array
+          description: Seed first, then planner-chosen links in visit order. Skipped and failed links are listed with an error code and do not fail the run.
+          items: { $ref: '#/components/schemas/CrawlPage' }
+    CrawlPage:
+      type: object
+      additionalProperties: false
+      required: [url, final_url, status]
+      properties:
+        url: { type: string, format: uri }
+        final_url: { type: [string, 'null'], format: uri }
+        status: { type: string, enum: [ok, skipped, failed] }
+        title: { type: [string, 'null'], maxLength: 300 }
+        error: { type: [string, 'null'], description: Error code or reason for a skipped or failed link }
     DemoRunRequest:
       type: object
       additionalProperties: false
@@ -515,6 +567,10 @@ components:
         code:
           type: string
           description: Machine-readable code, e.g. reason_required, already_decided, payload_hash_mismatch, naive_disabled
+        run_id:
+          type: string
+          format: uuid
+          description: Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log
     HealthCheck:
       type: string
       enum: [ok, error, skipped]

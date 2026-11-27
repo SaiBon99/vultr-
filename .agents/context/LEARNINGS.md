@@ -11,3 +11,9 @@ One line each: `- YYYY-MM-DD: symptom, cause, fix.` Grouped by area, newest firs
 - 2026-11-27: Backend on Windows: psycopg async fails under uvicorn's ProactorEventLoop; run `uv run python scripts/serve.py`. Linux unaffected.
 
 ## Tests
+- 2026-11-27: `pkill -f "<server cmd>"` inside a Bash tool call also matches (and kills) the calling shell, whose command line holds the same text; kill by PID from `pgrep -af` instead.
+
+## Vultr and Object Storage
+- 2026-11-27: vultr-cli v3.11 `object-storage create` needs both `--cluster-id` and `--tier-id`; `vultr_provision.sh` looks up `cluster list` then `cluster tiers --cluster-id`. JSON field names confirmed against live output.
+- 2026-11-27: Vultr ams1 accepts path-style s3v4 with `S3_REGION=ams1`, `create_bucket` without LocationConstraint, and a prefix-scoped (`logs/`) lifecycle rule; `quarantine-receipts` was free on ams1. ams has two clusters (ams1: Standard/Premium/Archival tiers; ams2: Performance/Accelerated), and no tier is flagged `is_default`, so `vultr_provision.sh` takes the first listed.
+- 2026-11-27: A /crawl run's `run_end.exit_code` is the `docker run` client's code after `docker rm -f` (-9 or 137), not the agent's own exit code; read `status` and `error_code` instead.

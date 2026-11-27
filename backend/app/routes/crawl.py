@@ -1,18 +1,24 @@
-"""POST /crawl. Reviewer token only. After a successful run the summary goes through the memory
-gate (app.memory_store) in a new tainted session; frozen rows are then explained by the isolated
-judge in the background. The response shape is unchanged."""
+"""POST /crawl and its run logs. Reviewer token only.
+
+After a successful run the summary goes through the memory gate (app.memory_store) in a new
+tainted session; frozen rows are then explained by the isolated judge in the background. Neither
+step changes the response.
+"""
 
 import logging
 from typing import Any
+from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Request
+from fastapi import APIRouter, BackgroundTasks, Request, Response
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 from app import gate, memory_store
 from app.crawl.service import crawl
-from app.deps import ReviewerAuth
+from app.deps import ApiError, ReviewerAuth
 from app.judge import run_judge
 from app.models import CrawlRequest, CrawlResult, Error
+from app.runlog import CONTENT_TYPE, run_log_key
 
 router = APIRouter(tags=["crawl"])
 log = logging.getLogger("app.crawl")
@@ -35,13 +41,14 @@ async def crawl_page(
         guard=state.crawl_guard,
         runner=state.crawl_runner,
         slots=state.crawl_slots,
+        store=state.store,
     )
     saved = await _save_to_memory(state, result)
     frozen = [s for s in saved if s["table"] == "quarantine_queue"]
     if frozen and state.judge is not None:
         # After the response: a slow judge never delays the crawl, and rows read "pending" meanwhile.
         background.add_task(_judge_frozen, state, frozen, result.final_url)
-    out = result.model_dump()
+    out = result.model_dump(mode="json")
     # CrawlUsage properties are optional, not nullable: drop the counts the model did not report.
     out["usage"] = result.usage.model_dump(exclude_none=True) if result.usage else None
     return JSONResponse(out)
@@ -56,14 +63,19 @@ async def _save_to_memory(state, result: CrawlResult) -> list[dict[str, Any]]:
     allowlist = gate.normalize_allowlist(state.settings.egress_allowlist)
     try:
         async with state.db.proxy.connection() as conn:
-            saved = await memory_store.save_crawl(conn, result, allowlist)
+            saved = await memory_store.save_crawl(
+                conn, result, allowlist, state.settings.canary_tokens
+            )
     except Exception:
         log.exception("crawl memory save failed url=%s", result.final_url[:300])
         return []
     for s in saved:
         log.info(
             "crawl memory saved table=%s verdict=%s risk=%s id=%s",
-            s["table"], s["verdict"], s["risk_score"], s["id"],
+            s["table"],
+            s["verdict"],
+            s["risk_score"],
+            s["id"],
         )
     return saved
 
@@ -85,3 +97,26 @@ async def _judge_frozen(state, frozen: list[dict[str, Any]], source_ref: str) ->
             log.exception("crawl judge save failed id=%s", row["id"])
             continue
         log.info("crawl judge id=%s status=%s", row["id"], status)
+
+
+@router.get(
+    "/crawl/runs/{run_id}/log",
+    operation_id="getCrawlRunLog",
+    dependencies=[ReviewerAuth],
+    response_class=Response,
+    responses={
+        200: {"content": {CONTENT_TYPE: {"schema": {"type": "string"}}}},
+        **{code: {"model": Error} for code in (401, 404, 503)},
+    },
+)
+async def get_crawl_run_log(run_id: UUID, request: Request) -> Response:
+    store = request.app.state.store
+    if store is None:
+        raise ApiError(503, "Object storage is not configured", "storage_missing")
+    try:
+        body = await run_in_threadpool(store.get, run_log_key("crawl", str(run_id)))
+    except Exception as exc:
+        raise ApiError(503, "Object storage is unreachable", "storage_unavailable") from exc
+    if body is None:
+        raise ApiError(404, "Run log not found", "not_found")
+    return Response(body, media_type=CONTENT_TYPE)

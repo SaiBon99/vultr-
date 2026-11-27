@@ -1,4 +1,5 @@
-"""Auth header dependencies. Constant-time compares; empty configured secrets reject everything."""
+"""Auth header dependencies. Constant-time compares; empty configured secrets reject everything.
+REVIEWER_AUTH_DISABLED (demo only) lets every reviewer check pass."""
 
 import hashlib
 import hmac
@@ -13,6 +14,7 @@ class ApiError(HTTPException):
     def __init__(self, status_code: int, detail: str, code: str | None = None) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.code = code
+        self.run_id: str | None = None  # /crawl 502 and 504: the run's transcript id
 
 
 def get_settings_dep(request: Request) -> Settings:
@@ -42,7 +44,7 @@ def require_reviewer_token(
     settings: SettingsDep,
     x_reviewer_token: Annotated[str | None, Header()] = None,
 ) -> None:
-    if not secrets_match(x_reviewer_token, settings.REVIEWER_TOKEN.get_secret_value()):
+    if not optional_reviewer_ok(settings, x_reviewer_token):
         raise ApiError(401, "Missing or invalid X-Reviewer-Token", "unauthorized")
 
 
@@ -50,6 +52,8 @@ def optional_reviewer_ok(
     settings: SettingsDep,
     x_reviewer_token: Annotated[str | None, Header()] = None,
 ) -> bool:
+    if settings.REVIEWER_AUTH_DISABLED:
+        return True
     return secrets_match(x_reviewer_token, settings.REVIEWER_TOKEN.get_secret_value())
 
 

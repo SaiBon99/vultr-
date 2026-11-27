@@ -117,6 +117,7 @@ class RecordingRun(ProcessRun):
     def __init__(self, proc, container_id: str, image_id: str, sent: list[bytes], runner) -> None:
         super().__init__(proc)
         self._ids = (container_id, image_id)
+        self.image_id = image_id
         self._sent = sent
         self._runner = runner
 

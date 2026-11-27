@@ -113,18 +113,25 @@ async def record_judgement(conn: AsyncConnection, quarantine_id: UUID, result: A
 
 
 def notes_from_crawl(result: Any) -> list[str]:
-    """What a crawl remembers. Change only this to save key points or model-chosen notes later."""
-    return [result.summary]
+    """What a crawl remembers: one note with the summary and key points, so the gate sees both.
+    One write per run keeps the burst rule quiet."""
+    return ["\n".join([result.summary, *result.key_points])]
 
 
 async def save_crawl(
-    conn: AsyncConnection, result: Any, allowlist: frozenset[str]
+    conn: AsyncConnection,
+    result: Any,
+    allowlist: frozenset[str],
+    canaries: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
-    """One new session per crawl, tainted by the page it read; each note goes through the gate."""
+    """One new session per crawl, tainted by every page it read; the note goes through the gate."""
     session_id, _token = await create_session(conn)
-    await mark_tainted(conn, session_id, result.final_url, "web")
+    for page in result.pages:
+        if page.status == "ok" and page.final_url:
+            await mark_tainted(conn, session_id, page.final_url, "web")
     return [
-        await write_memory(conn, session_id, note, allowlist) for note in notes_from_crawl(result)
+        await write_memory(conn, session_id, note, allowlist, canaries)
+        for note in notes_from_crawl(result)
     ]
 
 
