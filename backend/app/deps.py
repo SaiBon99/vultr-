@@ -13,6 +13,7 @@ class ApiError(HTTPException):
     def __init__(self, status_code: int, detail: str, code: str | None = None) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.code = code
+        self.run_id: str | None = None  # /crawl 502 and 504: the run's transcript id
 
 
 def get_settings_dep(request: Request) -> Settings:

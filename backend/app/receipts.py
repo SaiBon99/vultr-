@@ -1,11 +1,11 @@
-"""Ed25519 cleanup receipts and object storage (contracts/README.md wire rule 4)."""
+"""Ed25519 cleanup receipts (contracts/README.md wire rule 4). Stores live in app.storage."""
 
 import base64
 import hashlib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 )
 
 from app.canonical import canon
+from app.storage import InMemoryObjectStore, ObjectStore, S3ObjectStore  # noqa: F401
 
 
 def raw_public_bytes(pub: Ed25519PublicKey) -> bytes:
@@ -106,72 +107,3 @@ def verify_receipt(receipt: dict[str, Any], public_key: Ed25519PublicKey) -> boo
     except Exception:
         return False
     return True
-
-
-class ObjectStore(Protocol):
-    def put_json(self, key: str, body: bytes) -> str:
-        """Store and return the object URI."""
-        ...
-
-    def get(self, key: str) -> bytes | None: ...
-
-    def ping(self) -> bool: ...
-
-
-class InMemoryObjectStore:
-    def __init__(self, bucket: str = "quarantine-receipts") -> None:
-        self.bucket = bucket
-        self.objects: dict[str, bytes] = {}
-
-    def put_json(self, key: str, body: bytes) -> str:
-        self.objects[key] = body
-        return f"s3://{self.bucket}/{key}"
-
-    def get(self, key: str) -> bytes | None:
-        return self.objects.get(key)
-
-    def ping(self) -> bool:
-        return True
-
-
-class S3ObjectStore:
-    """boto3 client for Vultr Object Storage or MinIO. Sync; call via a threadpool."""
-
-    def __init__(
-        self,
-        *,
-        endpoint_url: str,
-        access_key: str,
-        secret_key: str,
-        bucket: str,
-        region: str = "us-east-1",
-    ) -> None:
-        import boto3
-
-        self.bucket = bucket
-        self._client = boto3.client(
-            "s3",
-            endpoint_url=endpoint_url,
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            region_name=region,
-        )
-
-    def put_json(self, key: str, body: bytes) -> str:
-        self._client.put_object(
-            Bucket=self.bucket, Key=key, Body=body, ContentType="application/json"
-        )
-        return f"s3://{self.bucket}/{key}"
-
-    def get(self, key: str) -> bytes | None:
-        try:
-            return self._client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
-        except self._client.exceptions.NoSuchKey:
-            return None
-
-    def ping(self) -> bool:
-        try:
-            self._client.head_bucket(Bucket=self.bucket)
-        except Exception:
-            return False
-        return True

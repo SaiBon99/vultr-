@@ -67,7 +67,7 @@ jobs:
       - name: Backend lint (crawl code)
         working-directory: backend
         # app/gate.py has a pre-existing E501 on main (Phase 1 code); scope lint to the crawl path until it is fixed.
-        run: uv run ruff check app/crawl app/routes/crawl.py app/models.py app/config.py app/main.py tests/test_crawl_sandbox.py
+        run: uv run ruff check app/crawl app/routes/crawl.py app/models.py app/config.py app/main.py app/deps.py app/storage.py app/runlog.py app/receipts.py tests/test_crawl_sandbox.py tests/test_crawl_runlog.py tests/crawl_fakes.py
 
       - name: Build the crawler sandbox image
         # The Docker-marked test skips without this image, so build it here and let the test run for real.

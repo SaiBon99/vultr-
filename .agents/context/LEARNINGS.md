@@ -11,3 +11,9 @@ One line each: `- YYYY-MM-DD: symptom, cause, fix.` Grouped by area, newest firs
 - 2026-11-27: Backend on Windows: psycopg async fails under uvicorn's ProactorEventLoop; run `uv run python scripts/serve.py`. Linux unaffected.
 
 ## Tests
+- 2026-11-27: `pkill -f "<server cmd>"` inside a Bash tool call also matches (and kills) the calling shell, whose command line holds the same text; kill by PID from `pgrep -af` instead.
+
+## Vultr and Object Storage
+- 2026-11-27: vultr-cli v3.11 `object-storage create` needs both `--cluster-id` and `--tier-id`; `vultr_provision.sh` looks up `cluster list` then `cluster tiers --cluster-id`. Field names come from the CLI source, not yet from live output (ticket 17).
+- 2026-11-27: Local MinIO accepts the prefix-scoped `logs/` lifecycle rule and `S3_REGION=ewr1` without a LocationConstraint error; Vultr behaviour is unverified until ticket 17.
+- 2026-11-27: A /crawl run's `run_end.exit_code` is the `docker run` client's code after `docker rm -f` (-9 or 137), not the agent's own exit code; read `status` and `error_code` instead.

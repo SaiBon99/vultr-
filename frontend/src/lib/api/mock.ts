@@ -15,16 +15,150 @@ import {
 import {
   ApiError,
   type AuditLog,
+  type CrawlLimits,
   type Health,
   type PublicKey,
   type QuarantineItem,
   type QuarantineList,
   type Receipt,
   type ReviewApi,
+  type RunLogLine,
 } from "./types";
 
 const clone = <T>(v: unknown): T => structuredClone(v) as T;
 const fixtureReceipt = receiptJson as unknown as Receipt;
+const MOCK_LIMITS: CrawlLimits = { memory_mb: 512, cpus: 1, timeout_s: 30 };
+const MOCK_IMAGE = "sha256:" + "0".repeat(64);
+const MOCK_CONTAINER = "0".repeat(64);
+
+/** Mock-only trigger: a URL whose host ends in .invalid fails like a real fetch_failed run. */
+const isFailingUrl = (url: string): boolean => {
+  try {
+    return new URL(url).hostname.endsWith(".invalid");
+  } catch {
+    return false;
+  }
+};
+
+/** Short sample transcripts (wire rule 6) for a successful and a failed crawl. */
+export function mockRunLog(
+  runId: string,
+  url: string,
+  ok: boolean,
+): RunLogLine[] {
+  const start: RunLogLine = {
+    type: "run_start",
+    run_id: runId,
+    kind: "crawl",
+    session_id: null,
+    started_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+    limits: MOCK_LIMITS,
+    image_id: MOCK_IMAGE,
+  };
+  const head: RunLogLine[] = [
+    start,
+    {
+      type: "msg",
+      seq: 1,
+      t_ms: 3,
+      dir: "host_to_agent",
+      msg: { type: "task", url },
+    },
+    {
+      type: "msg",
+      seq: 2,
+      t_ms: 410,
+      dir: "agent_to_host",
+      msg: { type: "fetch", url },
+    },
+  ];
+  if (!ok)
+    return [
+      ...head,
+      {
+        type: "host",
+        seq: 3,
+        t_ms: 690,
+        event: "fetch",
+        final_url: url,
+        error_code: "fetch_failed",
+      },
+      {
+        type: "run_end",
+        status: "error",
+        http_status: 502,
+        error_code: "fetch_failed",
+        exit_code: null,
+        container_id: MOCK_CONTAINER,
+        elapsed_ms: 720,
+        stderr: "",
+        stderr_truncated: false,
+        lines_dropped: 0,
+      },
+    ];
+  const body = `<html><head><title>Mock page</title></head><body>${"Mock body text. ".repeat(40)}</body></html>`;
+  return [
+    ...head,
+    {
+      type: "host",
+      seq: 3,
+      t_ms: 690,
+      event: "fetch",
+      final_url: url,
+      status: 200,
+      bytes: body.length,
+      content_type: "text/html",
+    },
+    {
+      type: "msg",
+      seq: 4,
+      t_ms: 691,
+      dir: "host_to_agent",
+      msg: {
+        type: "fetch_result",
+        final_url: url,
+        content_type: "text/html",
+        body,
+        body_truncated: false,
+      },
+    },
+    {
+      type: "host",
+      seq: 5,
+      t_ms: 1980,
+      event: "model",
+      model: "mock",
+      inference_id: "mock-inference",
+      usage: null,
+      latency_ms: 1255,
+    },
+    {
+      type: "msg",
+      seq: 6,
+      t_ms: 1990,
+      dir: "agent_to_host",
+      msg: {
+        type: "result",
+        title: "Mock page",
+        summary: "Canned crawl result.",
+        key_points: ["Mock data"],
+      },
+    },
+    {
+      type: "run_end",
+      status: "ok",
+      http_status: 200,
+      error_code: null,
+      exit_code: 0,
+      container_id: MOCK_CONTAINER,
+      elapsed_ms: 2100,
+      stderr: "",
+      stderr_truncated: false,
+      lines_dropped: 0,
+    },
+  ];
+}
+
 const microTime = () =>
   new Date().toISOString().replace(/\.(\d{3})Z$/, ".$1000Z");
 
@@ -97,6 +231,7 @@ export function createMockApi({
   base.sessions[0].write_count += 1;
   base.sessions.push(clone(triageSession));
   const state = sortQueue(base);
+  const runLogs = new Map<string, RunLogLine[]>();
   const started = Date.now();
   const receipts = new Map<string, Receipt>();
   let signer: Promise<Signer | null> | undefined;
@@ -219,23 +354,43 @@ export function createMockApi({
       if (!r) throw new ApiError(404, "Not found");
       return clone<Receipt>(r);
     },
-    crawl: async (body) => ({
-      url: body.url,
-      final_url: body.url,
-      title: "Mock page",
-      summary: "Canned crawl result. Mock mode does not run the sandbox.",
-      key_points: ["Mock data", "No container was started"],
-      model: "mock",
-      inference_id: "mock-inference",
-      usage: null,
-      elapsed_ms: 0,
-      sandbox: {
-        runtime: "docker",
-        container_id: "0".repeat(64),
-        image_id: "sha256:" + "0".repeat(64),
-        network: "none",
-        limits: { memory_mb: 512, cpus: 1, timeout_s: 30 },
-      },
-    }),
+    crawl: async (body) => {
+      const runId = crypto.randomUUID();
+      const ok = !isFailingUrl(body.url);
+      runLogs.set(runId, mockRunLog(runId, body.url, ok));
+      if (!ok)
+        throw new ApiError(
+          502,
+          "Could not fetch the page",
+          "fetch_failed",
+          runId,
+        );
+      return {
+        url: body.url,
+        final_url: body.url,
+        title: "Mock page",
+        summary: "Canned crawl result. Mock mode does not run the sandbox.",
+        key_points: ["Mock data", "No container was started"],
+        model: "mock",
+        inference_id: "mock-inference",
+        usage: null,
+        elapsed_ms: 0,
+        sandbox: {
+          runtime: "docker",
+          container_id: MOCK_CONTAINER,
+          image_id: MOCK_IMAGE,
+          network: "none",
+          limits: MOCK_LIMITS,
+        },
+        run_id: runId,
+        log_uri: `s3://mock-receipts/logs/crawl/${runId}.jsonl`,
+      };
+    },
+    getCrawlRunLog: async (runId) => {
+      const log = runLogs.get(runId);
+      if (!log)
+        throw new ApiError(404, "No transcript for this run", "not_found");
+      return structuredClone(log);
+    },
   };
 }

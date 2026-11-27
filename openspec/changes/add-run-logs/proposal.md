@@ -33,7 +33,7 @@ Each subagent run happens in a disposable sandbox that is destroyed when it fini
 - A separate bucket for logs. Logs share `S3_BUCKET` under `logs/` (D9).
 
 ## Impact
-- contracts/: `openapi.yaml` 0.2.2 (`CrawlResult.run_id`, `CrawlResult.log_uri`, `Error.run_id`, path `/crawl/runs/{run_id}/log`); `README.md` wire rule 5; fixtures if they cover these schemas.
+- contracts/: `openapi.yaml` 0.2.2 (`CrawlResult.run_id`, `CrawlResult.log_uri`, `Error.run_id`, path `/crawl/runs/{run_id}/log`); `README.md` wire rule 6; fixtures if they cover these schemas.
 - backend/:
   - new `app/storage.py`, with the store classes moved out of `app/receipts.py` and re-exported from it
   - new `app/runlog.py`

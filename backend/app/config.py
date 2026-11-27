@@ -45,6 +45,18 @@ class Settings(BaseSettings):
     RECEIPT_SIGNING_KEY_PATH: str = ""
 
     @property
+    def log_secrets(self) -> list[str]:
+        """Values redacted from run logs before upload."""
+        secrets = (
+            self.VULTR_INFERENCE_API_KEY,
+            self.HOST_SECRET,
+            self.REVIEWER_TOKEN,
+            self.S3_ACCESS_KEY,
+            self.S3_SECRET_KEY,
+        )
+        return [v for s in secrets if (v := s.get_secret_value())]
+
+    @property
     def egress_allowlist(self) -> list[str]:
         return [d.strip() for d in self.EGRESS_ALLOWLIST.split(",") if d.strip()]
 

@@ -48,6 +48,7 @@ class Wire(BaseModel):
 class Error(Wire):
     detail: str
     code: str | None = None
+    run_id: UUID | None = None
 
 
 class HealthChecks(Wire):
@@ -267,3 +268,5 @@ class CrawlResult(Wire):
     usage: CrawlUsage | None
     elapsed_ms: int = Field(ge=0)
     sandbox: CrawlSandbox
+    run_id: UUID
+    log_uri: str | None

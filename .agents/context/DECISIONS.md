@@ -15,6 +15,7 @@ A superseding entry adds `- Context changed:`; one whose reason can expire (a pr
 | D6 | Chainguard MinIO images locally | active |
 | D7 | Docker sandbox and host broker for /crawl | active |
 | D8 | /crawl runs at most 2 at once; 503 sandbox_busy | active |
+| D9 | Run logs share the receipts bucket under logs/ | active |
 
 ## D1: Frontend stack
 
@@ -61,3 +62,9 @@ Local S3 uses `chainguard/minio` and `chainguard/minio-client`; production uses 
 A third concurrent `/crawl` request gets 503 with code `sandbox_busy` immediately, before any container starts. No queue.
 - Why: each run reserves up to 512 MB and 1 CPU on an 8 GB VM; rejecting keeps both memory and latency bounded.
 - Revisit if: the VM size changes or reviewers routinely hit `sandbox_busy`.
+
+## D9: Run logs share the receipts bucket under logs/
+
+Each /crawl run writes one redacted NDJSON transcript to `S3_BUCKET` at `logs/crawl/<run_id>.jsonl` (sessions reserved at `logs/sessions/<session_id>/`), next to `receipts/`. Change: openspec/changes/add-run-logs; wire rule 6.
+- Why: one Object Storage subscription and one credential pair; the optional expiry rule (`setup_object_storage.py --logs-expire-days`) filters on `logs/` only, so receipts never expire.
+- Revisit if: logs need a different retention, access policy or region from receipts, or Vultr rejects prefix-scoped lifecycle rules.
