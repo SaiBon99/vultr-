@@ -3,7 +3,7 @@
 Owner: Infra agent. Writes only inside `infra/`. Read-only inputs: [../contracts/schema.sql](../contracts/schema.sql). Root rules: [../AGENTS.md](../AGENTS.md).
 
 ## Owns
-`docker-compose.yml` (pgvector/pgvector:pg16 + MinIO), `sql/001_init.sql` (applies contracts/schema.sql, then sets role LOGIN and passwords from env), `scripts/keygen_ed25519.py`, `scripts/setup_vultr_vx1.sh`, `scripts/vultr_provision.sh`, `scripts/smoke_check.py`, `scripts/reset_demo.py`, `.env.example`.
+`docker-compose.yml` (pgvector/pgvector:pg16 + MinIO), `sql/001_init.sql` (applies contracts/schema.sql, then sets role LOGIN and passwords from env), `scripts/keygen_ed25519.py`, `scripts/setup_vultr_vx1.sh`, `scripts/setup_crawl_sandbox.sh`, `scripts/vultr_provision.sh`, `scripts/smoke_check.py`, `scripts/reset_demo.py`, `.env.example`.
 
 ## Commands
 ```bash

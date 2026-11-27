@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     EMBED_MODEL: str = "qwen3-embedding-4b"
     EMBED_DIMENSIONS: int = 1024
 
+    CRAWLER_MODEL: str = "qwen3.8-27b"
+    CRAWL_MAX_BYTES: int = 2_000_000
+    CRAWL_SANDBOX_IMAGE: str = "memory-quarantine-crawler:latest"
+    SANDBOX_MAX_MEMORY_MB: int = 512
+    SANDBOX_MAX_CPUS: int = 1
+    SANDBOX_TIMEOUT_S: int = 30
+
     DEMO_ALLOW_NAIVE: bool = False
     EGRESS_ALLOWLIST: str = ""
     RECEIPT_SIGNING_KEY_PATH: str = ""
