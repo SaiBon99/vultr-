@@ -2,12 +2,18 @@
 
 Owner: Frontend agent. Writes only inside `frontend/`. Read-only inputs: [../contracts/openapi.yaml](../contracts/openapi.yaml), [../contracts/receipt.schema.json](../contracts/receipt.schema.json), [../contracts/fixtures/](../contracts/README.md). Root rules: [../AGENTS.md](../AGENTS.md). The record lives at the repo root.
 
+API: `PUBLIC_API_MODE=mock|live` (default mock, serves ../contracts/fixtures via relative imports; SvelteKit 3 has no `$lib`/`$env`, use `#lib/...` and `import.meta.env`), `PUBLIC_API_BASE`, reviewer token from sessionStorage or `PUBLIC_REVIEWER_TOKEN`. Client in `src/lib/api/`, wire-rule crypto in `src/lib/crypto/`.
+
 Stack: SvelteKit (Svelte 5), pnpm, Tailwind CSS v4, Ark UI, ESLint 10 + Prettier, Terrazzo tokens. Type: App.
 
 ## Commands
 ```bash
 pnpm install
-pnpm run dev            # dev server, port 5173
+pnpm run dev            # dev server, port 5173; app at http://localhost:5173/ui
+pnpm run build          # static SPA into build/ (adapter-static, base /ui; FastAPI mounts it)
+pnpm run api:types      # regenerate src/lib/api/schema.d.ts from ../contracts/openapi.yaml
+pnpm run test:e2e       # Playwright smoke (mock data)
+pnpm run test:a11y      # axe checks
 pnpm run check:unified  # lint, format, types, tests, tokens
 pnpm run check:full     # adds build and e2e
 pnpm run tokens:build   # after editing tokens/*.json

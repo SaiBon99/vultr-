@@ -66,6 +66,7 @@ export default defineConfig({
               foreground: "color.success-foreground",
               background: "color.success",
             },
+            { foreground: "color.info-foreground", background: "color.info" },
             {
               foreground: "color.warning-foreground",
               background: "color.warning",
