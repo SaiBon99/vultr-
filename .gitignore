@@ -221,3 +221,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Playwright MCP browser output (local tooling, not project code)
+.playwright-mcp/

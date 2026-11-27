@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Sandbox Runner</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; color: #1b1b1b; }
+    textarea { width: 100%; height: 5rem; font: inherit; }
+    button { margin-top: .5rem; padding: .5rem 1rem; font: inherit; cursor: pointer; }
+    .step { border: 1px solid #ddd; border-radius: 6px; padding: .75rem; margin: 1rem 0; }
+    .badge { font-weight: 600; }
+    .ok { color: #0a7d32; } .bad { color: #b00020; }
+    pre { background: #f5f5f5; padding: .5rem; overflow-x: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Agent Sandbox Runner</h1>
+  <p>Describe a task. The agent writes code, runs it in an isolated Microsandbox microVM, and reports what actually happened.</p>
+  <form id="task-form">
+    <textarea id="goal" placeholder="e.g. Write and run a Python script that prints the first 10 Fibonacci numbers."></textarea>
+    <button type="submit">Run task</button>
+  </form>
+  <div id="result"></div>
+
+  <script>
+    const form = document.getElementById("task-form");
+    const result = document.getElementById("result");
+
+    function el(tag, text, className) {
+      const node = document.createElement(tag);
+      node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    }
+
+    function renderStep(step) {
+      const box = document.createElement("div");
+      box.className = "step";
+      box.append(el("div", `Attempt ${step.attempt} - exit ${step.exit_code}${step.timed_out ? " (timed out)" : ""}`));
+      box.append(el("pre", step.code));
+      if (step.stdout) box.append(el("pre", "stdout:\n" + step.stdout));
+      if (step.stderr) box.append(el("pre", "stderr:\n" + step.stderr, "bad"));
+      return box;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const goal = document.getElementById("goal").value.trim();
+      if (goal.length < 3) return;
+      result.replaceChildren(el("p", "Running in sandbox..."));
+      try {
+        const response = await fetch("/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ goal }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || response.statusText);
+        const verdict = el(
+          "p",
+          data.status === "succeeded" ? "Succeeded" : "Failed after all attempts",
+          "badge " + (data.status === "succeeded" ? "ok" : "bad")
+        );
+        const nodes = [verdict, ...data.steps.map(renderStep)];
+        if (data.output) nodes.push(el("h3", "Verified output"), el("pre", data.output));
+        result.replaceChildren(...nodes);
+      } catch (err) {
+        result.replaceChildren(el("p", "Error: " + err.message, "bad"));
+      }
+    });
+  </script>
+</body>
+</html>
