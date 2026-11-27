@@ -46,11 +46,16 @@
   const pending = $derived(rows.some((i) => i.judge_status === "pending"));
   const awaiting = $derived(rows.filter((i) => i.status === "quarantined").length);
 
+  let requestSeq = 0;
   async function refresh() {
+    const seq = ++requestSeq;
     try {
-      list = sortQueue(await getApi().listQuarantine(filter === "all" ? undefined : filter));
+      const next = sortQueue(await getApi().listQuarantine(filter === "all" ? undefined : filter));
+      if (seq !== requestSeq) return;
+      list = next;
       error = null;
     } catch (err) {
+      if (seq !== requestSeq) return;
       error = describeError(err, "Could not load the quarantine queue.");
       errorStatus = err instanceof ApiError ? err.status : 0;
     }
@@ -214,6 +219,7 @@
           session={selectedSession}
           receipt={decided[selected.id]?.receipt ?? null}
           {ondecided}
+          onstale={refresh}
         />
       {/if}
     </div>

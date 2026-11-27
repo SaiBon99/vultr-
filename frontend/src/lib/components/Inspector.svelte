@@ -23,11 +23,13 @@
     session,
     receipt = null,
     ondecided,
+    onstale,
   }: {
     item: QuarantineItem;
     session: QuarantineSessionGroup | undefined;
     receipt?: Receipt | null;
     ondecided: (res: DecideResponse) => void;
+    onstale?: () => void;
   } = $props();
 
   let fetched = $state<Receipt | null>(null);
@@ -96,7 +98,7 @@
 
   {#if item.status === "quarantined"}
     {#key item.id}
-      <DecisionPanel {item} {ondecided} />
+      <DecisionPanel {item} {ondecided} {onstale} />
     {/key}
   {:else}
     <p class="text-sm text-muted-foreground">

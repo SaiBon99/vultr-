@@ -7,10 +7,15 @@
     type DecideRequest,
     type DecideResponse,
     type QuarantineItem,
+    ApiError,
   } from "#lib/api/index.js";
   import { reasonRequired } from "#lib/review.js";
 
-  let { item, ondecided }: { item: QuarantineItem; ondecided: (res: DecideResponse) => void } = $props();
+  let {
+    item,
+    ondecided,
+    onstale,
+  }: { item: QuarantineItem; ondecided: (res: DecideResponse) => void; onstale?: () => void } = $props();
 
   let reason = $state("");
   let busy = $state<DecideRequest["action"] | null>(null);
@@ -32,11 +37,12 @@
     busy = action;
     let res: DecideResponse;
     try {
-      res = await getApi().decide(item.id, trimmed ? { action, reason: trimmed } : { action });
+      res = await getApi().decide(item.id, action === "override" && trimmed ? { action, reason: trimmed } : { action });
     } catch (err) {
       const message = describeError(err, "The decision failed. Try again.");
       if (action === "override" && message.includes("reason_required")) reasonError = message;
       else error = message;
+      if (err instanceof ApiError && err.status === 409) onstale?.();
       confirmOpen = false;
       busy = null;
       return;
@@ -56,7 +62,7 @@
 
   <div class="grid gap-2xs">
     <label for={fieldId} class="text-sm font-medium">
-      Override reason <span class="font-normal text-muted-foreground">({required ? "required" : "optional"})</span>
+      Reason to override <span class="font-normal text-muted-foreground">({required ? "required" : "optional"})</span>
     </label>
     <textarea
       id={fieldId}

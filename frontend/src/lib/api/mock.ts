@@ -188,7 +188,8 @@ export function createMockApi({
       const s = await getSigner();
       item.status = body.action === "purge" ? "purged" : "overridden";
       if (body.action === "purge") item.content = null;
-      item.override_reason = body.reason?.trim() || null;
+      item.override_reason =
+        body.action === "override" ? body.reason?.trim() || null : null;
       item.decided_by = "reviewer";
       item.decided_at = microTime();
       item.receipt_id = crypto.randomUUID();
