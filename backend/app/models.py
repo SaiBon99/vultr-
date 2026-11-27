@@ -7,10 +7,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 GateMode = Literal["quarantined", "naive"]
-Verdict = Literal["CLEAN_USER", "TAINTED_UNREVIEWED", "POLICY_BLOCKED", "INCONCLUSIVE"]
-FrozenVerdict = Literal["TAINTED_UNREVIEWED", "POLICY_BLOCKED", "INCONCLUSIVE"]
+Verdict = Literal["ALLOW", "NEEDS_REVIEW", "BLOCKED", "FAIL_CLOSED"]
+FrozenVerdict = Literal["NEEDS_REVIEW", "BLOCKED", "FAIL_CLOSED"]
 RuleFlag = Literal[
     "tainted_session",
+    "immediate_write_after_read",
     "write_burst",
     "overwrite_attempt",
     "imperative_directive",
@@ -149,6 +150,8 @@ class QuarantineItem(Wire):
     source_ref: str | None
     source_snippet: str | None
     verdict: FrozenVerdict
+    risk_score: int = Field(ge=0, le=100)
+    effective_priority_score: int = Field(ge=0, le=115)
     rule_flags: list[RuleFlag]
     judge_status: JudgeStatus
     judge_note: JudgeNote | None
