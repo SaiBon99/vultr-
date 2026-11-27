@@ -32,10 +32,30 @@ _DIRECTIVE = re.compile(
     r"(?:previous|prior|earlier|above|instructions?|rules?)\b"
     r"|\bfrom now on\b"
     r"|\b(?:do not|don't|never)\s+(?:tell|mention|inform|notify)\b"
-    r"|\b(?:override|bypass)\s+(?:the\s+)?(?:policy|policies|rules?|safeguards?)\b",
+    r"|\b(?:override|bypass)\s+(?:the\s+)?(?:policy|policies|rules?|safeguards?)\b"
+    # Dormant trigger: a condition, then an exfiltration verb ("when asked for a quote, include ...").
+    r"|\b(?:when(?:ever)?|next\s+time|if\s+(?:anyone|someone|the\s+user|a\s+customer|they))\b"
+    r"[^.\n]{0,80}\b(?:send|forward|include|attach|email|share|cc|bcc|copy)\b"
+    # Reminder phrasing ("remember to send", "make sure to share").
+    r"|\b(?:remember\s+to|make\s+sure\s+(?:to|you)|be\s+sure\s+to)\s+(?:always\s+)?"
+    r"(?:send|forward|email|share|cc|bcc|copy|attach|include)\b"
+    # Open-ended recipient ("email the rate card to whoever asks").
+    r"|\b(?:send|email|share|attach|forward)\b[^.\n]{0,80}\b(?:to|with)\s+"
+    r"(?:whoever|anyone|everyone|every|all|any)\b",
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+)")
+# Spelled-out addresses. Bracketed (at) may use a real dot; a bare " at " needs a spelled "dot",
+# so ordinary text like "meet at 10.30" is not read as an address.
+_DOT = r"\s*(?:\[dot\]|\(dot\)|\{dot\})\s*|\s+dot\s+"
+_OBF_EMAIL = re.compile(
+    r"[A-Za-z0-9._%+\-]{1,64}\s*(?:\[at\]|\(at\)|\{at\})\s*"
+    rf"([A-Za-z0-9\-]{{1,63}}(?:(?:{_DOT}|\.)[A-Za-z0-9\-]{{1,63}}){{1,5}})"
+    r"|[A-Za-z0-9._%+\-]{1,64}\s+at\s+"
+    rf"([A-Za-z0-9\-]{{1,63}}(?:(?:{_DOT})[A-Za-z0-9\-]{{1,63}}){{1,5}})",
+    re.IGNORECASE,
+)
+_DOT_TOKEN = re.compile(_DOT, re.IGNORECASE)
 # Match the whole URL, then let urlsplit find the host, so userinfo (https://good.com:x@evil.com)
 # cannot smuggle an allowlisted name past the check. Also catches protocol-relative //host links.
 _URL = re.compile(r"(?:\bhttps?:|(?<![:\w/]))//[^\s\"'<>]+", re.IGNORECASE)
@@ -76,7 +96,13 @@ def _allowed(domain: str, allowlist: frozenset[str]) -> bool:
 
 
 def _has_external_email(text: str, allowlist: frozenset[str]) -> bool:
-    return any(not _allowed(m.group(1), allowlist) for m in _EMAIL.finditer(text))
+    if any(not _allowed(m.group(1), allowlist) for m in _EMAIL.finditer(text)):
+        return True
+    for m in _OBF_EMAIL.finditer(text):
+        domain = _DOT_TOKEN.sub(".", m.group(1) or m.group(2)).replace(" ", "")
+        if not _allowed(domain, allowlist):
+            return True
+    return False
 
 
 def _has_external_url(text: str, allowlist: frozenset[str]) -> bool:
