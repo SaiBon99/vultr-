@@ -1,0 +1,67 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "primitive": {
+    "duration": {
+      "$type": "duration",
+      "fast": {
+        "$value": {
+          "value": 120,
+          "unit": "ms"
+        }
+      },
+      "base": {
+        "$value": {
+          "value": 200,
+          "unit": "ms"
+        }
+      },
+      "slow": {
+        "$value": {
+          "value": 300,
+          "unit": "ms"
+        }
+      },
+      "slower": {
+        "$value": {
+          "value": 450,
+          "unit": "ms"
+        }
+      }
+    },
+    "ease": {
+      "$type": "cubicBezier",
+      "standard": {
+        "$value": [
+          0.2,
+          0,
+          0,
+          1
+        ]
+      },
+      "out": {
+        "$value": [
+          0.16,
+          1,
+          0.3,
+          1
+        ]
+      },
+      "in-out": {
+        "$value": [
+          0.65,
+          0,
+          0.35,
+          1
+        ]
+      },
+      "in": {
+        "$value": [
+          0.7,
+          0,
+          0.84,
+          0
+        ]
+      }
+    }
+  }
+}

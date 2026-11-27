@@ -1,0 +1,636 @@
+openapi: 3.1.0
+info:
+  title: Memory Quarantine Proxy
+  version: 0.1.0
+  description: |
+    FROZEN Phase 0 contract. Owner: Coordinator. Backend implements it; frontend consumes it.
+    Change only through an OpenSpec change in openspec/changes/.
+    Canonical JSON, hash-chain and receipt-signing rules: contracts/README.md.
+servers:
+  - url: http://localhost:8000
+    description: Local (FastAPI also serves frontend/build at /ui)
+security: []
+tags:
+  - name: proxy
+    description: Called by the host and the sandboxed worker
+  - name: review
+    description: Called by the Quarantine Review UI
+  - name: public
+paths:
+  /health:
+    get:
+      tags: [public]
+      operationId: getHealth
+      responses:
+        '200':
+          description: Readiness of each dependency
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+  /proxy/sessions:
+    post:
+      tags: [proxy]
+      operationId: createSession
+      summary: Host mints a session; the sandbox only ever sees session_token.
+      description: |
+        gate_mode=naive is rejected with 403 unless DEMO_ALLOW_NAIVE=true AND a valid X-Reviewer-Token is sent.
+        Every naive session is logged to audit_events (event_type session_created, payload.gate_mode=naive).
+      security:
+        - HostSecret: []
+      parameters:
+        - $ref: '#/components/parameters/ReviewerTokenOptional'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSessionRequest' }
+      responses:
+        '201':
+          description: Session created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CreateSessionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /proxy/read:
+    post:
+      tags: [proxy]
+      operationId: proxyRead
+      summary: Register external content read by the worker; sets sticky session taint.
+      security:
+        - SessionToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProxyReadRequest' }
+      responses:
+        '200':
+          description: Content registered; session is now tainted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ProxyReadResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /proxy/memory/write:
+    post:
+      tags: [proxy]
+      operationId: proxyMemoryWrite
+      summary: Deterministic 4-state gate. 201 when CLEAN_USER, 202 when frozen.
+      description: |
+        The body carries no source or session_id: both are derived server-side from X-Session-Token,
+        so a compromised sandbox cannot claim source='user'. Unknown fields are rejected (422).
+      security:
+        - SessionToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MemoryWriteRequest' }
+      responses:
+        '201':
+          description: CLEAN_USER, promoted to memories
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryWriteAccepted' }
+        '202':
+          description: Frozen in quarantine_queue (TAINTED_UNREVIEWED, POLICY_BLOCKED or INCONCLUSIVE)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MemoryWriteQuarantined' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /proxy/memory/active:
+    get:
+      tags: [proxy]
+      operationId: proxyMemoryActive
+      summary: Recall from memories ONLY, via the memory_reader role.
+      security:
+        - SessionToken: []
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Optional query text; when present results are ranked by pgvector cosine distance (<=>).
+          schema: { type: string, maxLength: 2000 }
+        - name: k
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Active memories
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActiveMemories' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /quarantine:
+    get:
+      tags: [review]
+      operationId: listQuarantine
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter rows; omitted returns all statuses.
+          schema: { $ref: '#/components/schemas/QuarantineStatus' }
+      responses:
+        '200':
+          description: Quarantine rows grouped by session_id, newest session first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/QuarantineList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /quarantine/{id}/decide:
+    post:
+      tags: [review]
+      operationId: decideQuarantine
+      summary: Purge or override one row; signs and uploads an Ed25519 receipt.
+      description: |
+        purge: sets status=purged, content=NULL; keeps payload_hash and embedding.
+        override: copies the row into memories with source='external_override', status=overridden.
+        Override of a POLICY_BLOCKED row requires a non-empty reason (422 otherwise).
+        A row that is not status=quarantined returns 409.
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DecideRequest' }
+      responses:
+        '200':
+          description: Decision applied
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DecideResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /audit:
+    get:
+      tags: [review]
+      operationId: getAudit
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: session_id
+          in: query
+          required: false
+          description: Filter to one session. chain_valid is always computed over the FULL chain.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Hash-chained audit events, ascending seq
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditLog' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /keys/public:
+    get:
+      tags: [public]
+      operationId: getPublicKey
+      responses:
+        '200':
+          description: Ed25519 receipt-signing public key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicKey' }
+  /receipts/{id}:
+    get:
+      tags: [review]
+      operationId: getReceipt
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: receipt_id
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Signed receipt as stored in Object Storage
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Receipt' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    HostSecret:
+      type: apiKey
+      in: header
+      name: X-Host-Secret
+    SessionToken:
+      type: apiKey
+      in: header
+      name: X-Session-Token
+    ReviewerToken:
+      type: apiKey
+      in: header
+      name: X-Reviewer-Token
+  parameters:
+    ReviewerTokenOptional:
+      name: X-Reviewer-Token
+      in: header
+      required: false
+      description: Required only when gate_mode=naive.
+      schema: { type: string }
+  responses:
+    Unauthorized:
+      description: Missing or invalid credential header
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Not allowed in this configuration
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Row already decided
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Request failed validation
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail: { type: string }
+        code:
+          type: string
+          description: Machine-readable code, e.g. reason_required, already_decided, naive_disabled
+    HealthCheck:
+      type: string
+      enum: [ok, error, skipped]
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        checks:
+          type: object
+          additionalProperties: false
+          required: [db, object_storage, inference]
+          properties:
+            db: { $ref: '#/components/schemas/HealthCheck' }
+            object_storage: { $ref: '#/components/schemas/HealthCheck' }
+            inference: { $ref: '#/components/schemas/HealthCheck' }
+    GateMode:
+      type: string
+      enum: [quarantined, naive]
+    Verdict:
+      type: string
+      description: CLEAN_USER is never stored in quarantine_queue.
+      enum: [CLEAN_USER, TAINTED_UNREVIEWED, POLICY_BLOCKED, INCONCLUSIVE]
+    FrozenVerdict:
+      type: string
+      enum: [TAINTED_UNREVIEWED, POLICY_BLOCKED, INCONCLUSIVE]
+    RuleFlag:
+      type: string
+      description: |
+        tainted_session, write_burst (>3 writes in one session) and overwrite_attempt yield TAINTED_UNREVIEWED.
+        imperative_directive, external_email, external_url, sensitive_tool, canary_overlap and poison_similarity yield POLICY_BLOCKED.
+        missing_provenance, invalid_schema and judge_failed yield INCONCLUSIVE. Precedence: POLICY_BLOCKED > INCONCLUSIVE > TAINTED_UNREVIEWED.
+      enum:
+        - tainted_session
+        - write_burst
+        - overwrite_attempt
+        - imperative_directive
+        - external_email
+        - external_url
+        - sensitive_tool
+        - canary_overlap
+        - poison_similarity
+        - missing_provenance
+        - invalid_schema
+        - judge_failed
+    QuarantineStatus:
+      type: string
+      enum: [quarantined, purged, overridden]
+    JudgeStatus:
+      type: string
+      enum: [pending, done, failed]
+    SourceKind:
+      type: string
+      enum: [email, web, file, tool]
+    PayloadHash:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        gate_mode: { $ref: '#/components/schemas/GateMode' }
+        label:
+          type: string
+          maxLength: 120
+          description: Free-text label shown in the Review UI (e.g. "Session 1 - research")
+    CreateSessionResponse:
+      type: object
+      additionalProperties: false
+      required: [session_id, session_token, gate_mode, created_at]
+      properties:
+        session_id: { type: string, format: uuid }
+        session_token: { type: string, description: Opaque; only sha256(token) is stored }
+        gate_mode: { $ref: '#/components/schemas/GateMode' }
+        created_at: { type: string, format: date-time }
+    ExternalSource:
+      type: object
+      additionalProperties: false
+      required: [source_ref, source_kind, read_at]
+      properties:
+        source_ref: { type: string }
+        source_kind: { $ref: '#/components/schemas/SourceKind' }
+        read_at: { type: string, format: date-time }
+    ProxyReadRequest:
+      type: object
+      additionalProperties: false
+      required: [source_ref, source_kind]
+      properties:
+        source_ref:
+          type: string
+          maxLength: 2048
+          description: URL, message id (e.g. email:msg-001) or file path
+        source_kind: { $ref: '#/components/schemas/SourceKind' }
+        content:
+          type: string
+          maxLength: 200000
+          description: Inline content (demo/mocks). When omitted for web, the proxy fetches source_ref.
+    ProxyReadResponse:
+      type: object
+      additionalProperties: false
+      required: [source_ref, source_kind, content, tainted]
+      properties:
+        source_ref: { type: string }
+        source_kind: { $ref: '#/components/schemas/SourceKind' }
+        content: { type: string }
+        tainted: { type: boolean, const: true }
+    MemoryWriteRequest:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 8000 }
+        overwrite_id:
+          type: string
+          format: uuid
+          description: Present when the worker tries to update an existing active memory (always frozen, overwrite_attempt).
+    MemoryWriteAccepted:
+      type: object
+      additionalProperties: false
+      required: [status, verdict, memory_id, payload_hash]
+      properties:
+        status: { type: string, const: active }
+        verdict: { type: string, const: CLEAN_USER }
+        memory_id: { type: string, format: uuid }
+        payload_hash: { $ref: '#/components/schemas/PayloadHash' }
+    MemoryWriteQuarantined:
+      type: object
+      additionalProperties: false
+      required: [status, verdict, quarantine_id, payload_hash, rule_flags]
+      properties:
+        status: { type: string, const: quarantined }
+        verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        quarantine_id: { type: string, format: uuid }
+        payload_hash: { $ref: '#/components/schemas/PayloadHash' }
+        rule_flags:
+          type: array
+          items: { $ref: '#/components/schemas/RuleFlag' }
+    ActiveMemory:
+      type: object
+      additionalProperties: false
+      required: [id, session_id, content, source, source_ref, payload_hash, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        content: { type: string }
+        source: { type: string, enum: [user, external_override] }
+        source_ref: { type: [string, 'null'] }
+        payload_hash: { $ref: '#/components/schemas/PayloadHash' }
+        created_at: { type: string, format: date-time }
+        distance:
+          type: [number, 'null']
+          description: Cosine distance to q (null when q is omitted)
+    ActiveMemories:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ActiveMemory' }
+    JudgeNote:
+      description: Strict judge JSON. Mirrors contracts/judge.schema.json.
+      type: object
+      additionalProperties: false
+      required: [summary, risk_level, recommended_action, indicators]
+      properties:
+        summary: { type: string, maxLength: 500 }
+        risk_level: { type: string, enum: [low, medium, high, critical] }
+        recommended_action: { type: string, enum: [purge, override] }
+        indicators:
+          type: array
+          maxItems: 10
+          items: { type: string, maxLength: 120 }
+    QuarantineItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - session_id
+        - status
+        - content
+        - payload_hash
+        - source
+        - source_ref
+        - source_snippet
+        - verdict
+        - rule_flags
+        - judge_status
+        - judge_note
+        - override_reason
+        - decided_by
+        - decided_at
+        - receipt_uri
+        - receipt_id
+        - created_at
+      properties:
+        id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/QuarantineStatus' }
+        content: { type: [string, 'null'], description: null once purged }
+        payload_hash: { $ref: '#/components/schemas/PayloadHash' }
+        source: { type: string, enum: [user, external] }
+        source_ref: { type: [string, 'null'] }
+        source_snippet:
+          type: [string, 'null']
+          description: Up to 600 chars of the external content read in this session that matches source_ref
+        verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        rule_flags:
+          type: array
+          items: { $ref: '#/components/schemas/RuleFlag' }
+        judge_status: { $ref: '#/components/schemas/JudgeStatus' }
+        judge_note:
+          oneOf:
+            - $ref: '#/components/schemas/JudgeNote'
+            - type: 'null'
+        override_reason: { type: [string, 'null'] }
+        decided_by: { type: [string, 'null'] }
+        decided_at: { type: [string, 'null'], format: date-time }
+        receipt_uri: { type: [string, 'null'] }
+        receipt_id: { type: [string, 'null'], format: uuid, description: 'Latest receipt for this row (fetch via /receipts/{id})' }
+        created_at: { type: string, format: date-time }
+    QuarantineSessionGroup:
+      type: object
+      additionalProperties: false
+      required: [session_id, label, gate_mode, tainted, external_sources, write_count, created_at, items]
+      properties:
+        session_id: { type: string, format: uuid }
+        label: { type: [string, 'null'] }
+        gate_mode: { $ref: '#/components/schemas/GateMode' }
+        tainted: { type: boolean }
+        external_sources:
+          type: array
+          items: { $ref: '#/components/schemas/ExternalSource' }
+        write_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/QuarantineItem' }
+    QuarantineList:
+      type: object
+      additionalProperties: false
+      required: [sessions]
+      properties:
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/QuarantineSessionGroup' }
+    DecideRequest:
+      type: object
+      additionalProperties: false
+      required: [action]
+      properties:
+        action: { type: string, enum: [purge, override] }
+        reason:
+          type: string
+          maxLength: 1000
+          description: Required (non-blank) when overriding a POLICY_BLOCKED row
+    DecideResponse:
+      type: object
+      additionalProperties: false
+      required: [item, receipt, memory_id]
+      properties:
+        item: { $ref: '#/components/schemas/QuarantineItem' }
+        receipt: { $ref: '#/components/schemas/Receipt' }
+        memory_id:
+          type: [string, 'null']
+          format: uuid
+          description: New memories.id on override; null on purge
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, session_id, event_type, target_id, payload, prev_hash, event_hash, created_at]
+      properties:
+        seq: { type: integer, minimum: 1 }
+        session_id: { type: [string, 'null'], format: uuid }
+        event_type:
+          type: string
+          enum:
+            - session_created
+            - external_read
+            - memory_promoted
+            - memory_quarantined
+            - judge_completed
+            - judge_failed
+            - decision_purged
+            - decision_overridden
+            - receipt_signed
+        target_id: { type: [string, 'null'], format: uuid }
+        payload: { type: object }
+        prev_hash: { $ref: '#/components/schemas/PayloadHash' }
+        event_hash: { $ref: '#/components/schemas/PayloadHash' }
+        created_at: { type: string, description: 'RFC 3339 UTC, microseconds, Z suffix (YYYY-MM-DDTHH:MM:SS.ffffffZ)' }
+    AuditLog:
+      type: object
+      additionalProperties: false
+      required: [events, chain_valid, head_hash]
+      properties:
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/AuditEvent' }
+        chain_valid: { type: boolean }
+        head_hash: { $ref: '#/components/schemas/PayloadHash' }
+        first_invalid_seq: { type: [integer, 'null'] }
+    PublicKey:
+      type: object
+      additionalProperties: false
+      required: [alg, key_id, public_key_b64, jwk]
+      properties:
+        alg: { type: string, const: Ed25519 }
+        key_id: { type: string, description: 'sha256:<hex> of the raw 32-byte public key, first 16 hex chars' }
+        public_key_b64: { type: string, description: Standard base64 of the raw 32-byte key }
+        jwk:
+          type: object
+          additionalProperties: false
+          required: [kty, crv, x]
+          properties:
+            kty: { type: string, const: OKP }
+            crv: { type: string, const: Ed25519 }
+            x: { type: string, description: 'base64url, no padding' }
+    Receipt:
+      description: Mirrors contracts/receipt.schema.json.
+      type: object
+      additionalProperties: false
+      required:
+        - receipt_id
+        - event
+        - quarantine_id
+        - session_id
+        - verdict
+        - rule_flags
+        - payload_hash
+        - audit_head_hash
+        - override_reason
+        - timestamp
+        - key_id
+        - signature_alg
+        - signature_b64
+      properties:
+        receipt_id: { type: string, format: uuid }
+        event: { $ref: '#/components/schemas/QuarantineStatus' }
+        quarantine_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        rule_flags:
+          type: array
+          items: { $ref: '#/components/schemas/RuleFlag' }
+        payload_hash: { $ref: '#/components/schemas/PayloadHash' }
+        audit_head_hash: { $ref: '#/components/schemas/PayloadHash' }
+        override_reason: { type: [string, 'null'] }
+        timestamp: { type: string, description: 'RFC 3339 UTC, seconds, Z suffix' }
+        key_id: { type: string }
+        signature_alg: { type: string, const: Ed25519 }
+        signature_b64: { type: string }

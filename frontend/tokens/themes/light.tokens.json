@@ -1,0 +1,166 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "color": {
+    "$type": "color",
+    "background": {
+      "$value": "{primitive.color.white}",
+      "$description": "Page background"
+    },
+    "foreground": {
+      "$value": "{primitive.color.neutral-950}",
+      "$description": "Default text"
+    },
+    "card": {
+      "$value": "{primitive.color.white}",
+      "$description": "Raised surface"
+    },
+    "card-foreground": {
+      "$value": "{primitive.color.neutral-950}",
+      "$description": "Text on cards"
+    },
+    "popover": {
+      "$value": "{primitive.color.white}",
+      "$description": "Floating surface"
+    },
+    "popover-foreground": {
+      "$value": "{primitive.color.neutral-950}",
+      "$description": "Text on popovers"
+    },
+    "primary": {
+      "$value": "{primitive.color.brand-600}",
+      "$description": "Brand actions and links"
+    },
+    "primary-foreground": {
+      "$value": "{primitive.color.white}",
+      "$description": "Text on primary"
+    },
+    "secondary": {
+      "$value": "{primitive.color.neutral-100}",
+      "$description": "Quiet actions"
+    },
+    "secondary-foreground": {
+      "$value": "{primitive.color.neutral-900}",
+      "$description": "Text on secondary"
+    },
+    "muted": {
+      "$value": "{primitive.color.neutral-100}",
+      "$description": "Subtle surfaces"
+    },
+    "muted-foreground": {
+      "$value": "{primitive.color.neutral-700}",
+      "$description": "Secondary text"
+    },
+    "accent": {
+      "$value": "{primitive.color.brand-100}",
+      "$description": "Hover and selected states"
+    },
+    "accent-foreground": {
+      "$value": "{primitive.color.brand-900}",
+      "$description": "Text on accent"
+    },
+    "border": {
+      "$value": "{primitive.color.neutral-200}",
+      "$description": "Dividers and outlines"
+    },
+    "input": {
+      "$value": "{primitive.color.neutral-300}",
+      "$description": "Form control borders"
+    },
+    "ring": {
+      "$value": "{primitive.color.brand-500}",
+      "$description": "Focus outline"
+    },
+    "destructive": {
+      "$value": "{primitive.color.red-600}",
+      "$description": "Dangerous actions and errors"
+    },
+    "destructive-foreground": {
+      "$value": "{primitive.color.white}",
+      "$description": "Text on destructive"
+    },
+    "success": {
+      "$value": "{primitive.color.green-600}",
+      "$description": "Positive status"
+    },
+    "success-foreground": {
+      "$value": "{primitive.color.white}",
+      "$description": "Text on success"
+    },
+    "warning": {
+      "$value": "{primitive.color.amber-500}",
+      "$description": "Caution status"
+    },
+    "warning-foreground": {
+      "$value": "{primitive.color.neutral-950}",
+      "$description": "Text on warning"
+    },
+    "chart-1": {
+      "$value": {
+        "colorSpace": "oklch",
+        "components": [
+          0.65,
+          0.15,
+          154.03
+        ],
+        "hex": "#29a963"
+      },
+      "$description": "Data series 1"
+    },
+    "chart-2": {
+      "$value": {
+        "colorSpace": "oklch",
+        "components": [
+          0.65,
+          0.1231,
+          226.03
+        ],
+        "hex": "#089dc8"
+      },
+      "$description": "Data series 2"
+    },
+    "chart-3": {
+      "$value": {
+        "colorSpace": "oklch",
+        "components": [
+          0.65,
+          0.15,
+          298.03
+        ],
+        "hex": "#9b78de"
+      },
+      "$description": "Data series 3"
+    },
+    "chart-4": {
+      "$value": {
+        "colorSpace": "oklch",
+        "components": [
+          0.65,
+          0.15,
+          10.03
+        ],
+        "hex": "#da637a"
+      },
+      "$description": "Data series 4"
+    },
+    "chart-5": {
+      "$value": {
+        "colorSpace": "oklch",
+        "components": [
+          0.65,
+          0.1326,
+          82.03
+        ],
+        "hex": "#b78606"
+      },
+      "$description": "Data series 5"
+    },
+    "info": {
+      "$value": "{primitive.color.blue-600}",
+      "$description": "Informational status"
+    },
+    "info-foreground": {
+      "$value": "{primitive.color.white}",
+      "$description": "Text on info"
+    }
+  }
+}

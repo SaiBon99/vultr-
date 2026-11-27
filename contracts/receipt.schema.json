@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memory-quarantine.local/contracts/receipt.schema.json",
+  "title": "Signed cleanup receipt (FROZEN Phase 0 contract)",
+  "description": "Ed25519 signature over canonical JSON of this object with signature_b64 removed. Canonical JSON: contracts/README.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_id",
+    "event",
+    "quarantine_id",
+    "session_id",
+    "verdict",
+    "rule_flags",
+    "payload_hash",
+    "audit_head_hash",
+    "override_reason",
+    "timestamp",
+    "key_id",
+    "signature_alg",
+    "signature_b64"
+  ],
+  "properties": {
+    "receipt_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event": {
+      "enum": [
+        "quarantined",
+        "purged",
+        "overridden"
+      ]
+    },
+    "quarantine_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "verdict": {
+      "enum": [
+        "TAINTED_UNREVIEWED",
+        "POLICY_BLOCKED",
+        "INCONCLUSIVE"
+      ]
+    },
+    "rule_flags": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "tainted_session",
+          "write_burst",
+          "overwrite_attempt",
+          "imperative_directive",
+          "external_email",
+          "external_url",
+          "sensitive_tool",
+          "canary_overlap",
+          "poison_similarity",
+          "missing_provenance",
+          "invalid_schema",
+          "judge_failed"
+        ]
+      }
+    },
+    "payload_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "audit_head_hash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "event_hash of the newest audit_events row at signing time"
+    },
+    "override_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "key_id": {
+      "type": "string",
+      "description": "First 16 hex chars of sha256(raw public key); matches GET /keys/public"
+    },
+    "signature_alg": {
+      "const": "Ed25519"
+    },
+    "signature_b64": {
+      "type": "string",
+      "description": "Standard base64 of the 64-byte signature"
+    }
+  }
+}

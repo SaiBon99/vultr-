@@ -1,0 +1,41 @@
+{
+  "site_type": "app",
+  "framework": "sveltekit",
+  "family": "svelte",
+  "kit": "ark-ui",
+  "styling": "tailwind",
+  "lint": "eslint-prettier",
+  "token_tool": "terrazzo",
+  "brand": {
+    "key": "custom",
+    "hex": "#00884a"
+  },
+  "radius": "soft",
+  "density": "comfortable",
+  "fonts": {
+    "title": "geist",
+    "content": "geist",
+    "mono": "geist-mono",
+    "display": "geist"
+  },
+  "icons": {
+    "key": "lucide",
+    "set": null
+  },
+  "motion": {
+    "level": "restrained",
+    "lib": null,
+    "smooth_scroll": null
+  },
+  "shaders": null,
+  "cms": "none",
+  "agent_kit": [],
+  "skills": [],
+  "addon_registries": [],
+  "extras": [],
+  "test": "vitest",
+  "visual": "playwright",
+  "host": "none",
+  "backend": "none",
+  "pm": "pnpm"
+}

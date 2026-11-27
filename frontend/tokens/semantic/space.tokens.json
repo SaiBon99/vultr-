@@ -1,0 +1,42 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "spacing": {
+    "$type": "dimension",
+    "2xs": {
+      "$value": "{primitive.space.1}",
+      "$description": "Gap or padding step 2xs"
+    },
+    "xs": {
+      "$value": "{primitive.space.2}",
+      "$description": "Gap or padding step xs"
+    },
+    "sm": {
+      "$value": "{primitive.space.3}",
+      "$description": "Gap or padding step sm"
+    },
+    "md": {
+      "$value": "{primitive.space.4}",
+      "$description": "Gap or padding step md"
+    },
+    "lg": {
+      "$value": "{primitive.space.6}",
+      "$description": "Gap or padding step lg"
+    },
+    "xl": {
+      "$value": "{primitive.space.8}",
+      "$description": "Gap or padding step xl"
+    },
+    "2xl": {
+      "$value": "{primitive.space.12}",
+      "$description": "Gap or padding step 2xl"
+    },
+    "3xl": {
+      "$value": "{primitive.space.16}",
+      "$description": "Gap or padding step 3xl"
+    },
+    "section": {
+      "$value": "{primitive.space.24}",
+      "$description": "Gap or padding step section"
+    }
+  }
+}

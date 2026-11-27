@@ -1,0 +1,140 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "primitive": {
+    "type": {
+      "$type": "dimension",
+      "viewport-min": {
+        "$value": {
+          "value": 20.0,
+          "unit": "rem"
+        }
+      },
+      "viewport-max": {
+        "$value": {
+          "value": 80.0,
+          "unit": "rem"
+        }
+      },
+      "size-xs-min": {
+        "$value": {
+          "value": 0.75,
+          "unit": "rem"
+        }
+      },
+      "size-xs-max": {
+        "$value": {
+          "value": 0.8125,
+          "unit": "rem"
+        }
+      },
+      "size-sm-min": {
+        "$value": {
+          "value": 0.875,
+          "unit": "rem"
+        }
+      },
+      "size-sm-max": {
+        "$value": {
+          "value": 0.9375,
+          "unit": "rem"
+        }
+      },
+      "size-base-min": {
+        "$value": {
+          "value": 1.0,
+          "unit": "rem"
+        }
+      },
+      "size-base-max": {
+        "$value": {
+          "value": 1.125,
+          "unit": "rem"
+        }
+      },
+      "size-lg-min": {
+        "$value": {
+          "value": 1.125,
+          "unit": "rem"
+        }
+      },
+      "size-lg-max": {
+        "$value": {
+          "value": 1.25,
+          "unit": "rem"
+        }
+      },
+      "size-xl-min": {
+        "$value": {
+          "value": 1.25,
+          "unit": "rem"
+        }
+      },
+      "size-xl-max": {
+        "$value": {
+          "value": 1.5,
+          "unit": "rem"
+        }
+      },
+      "size-2xl-min": {
+        "$value": {
+          "value": 1.5,
+          "unit": "rem"
+        }
+      },
+      "size-2xl-max": {
+        "$value": {
+          "value": 1.875,
+          "unit": "rem"
+        }
+      },
+      "size-3xl-min": {
+        "$value": {
+          "value": 1.875,
+          "unit": "rem"
+        }
+      },
+      "size-3xl-max": {
+        "$value": {
+          "value": 2.5,
+          "unit": "rem"
+        }
+      },
+      "size-4xl-min": {
+        "$value": {
+          "value": 2.25,
+          "unit": "rem"
+        }
+      },
+      "size-4xl-max": {
+        "$value": {
+          "value": 3.25,
+          "unit": "rem"
+        }
+      },
+      "size-5xl-min": {
+        "$value": {
+          "value": 3.0,
+          "unit": "rem"
+        }
+      },
+      "size-5xl-max": {
+        "$value": {
+          "value": 4.5,
+          "unit": "rem"
+        }
+      },
+      "size-6xl-min": {
+        "$value": {
+          "value": 3.75,
+          "unit": "rem"
+        }
+      },
+      "size-6xl-max": {
+        "$value": {
+          "value": 6.0,
+          "unit": "rem"
+        }
+      }
+    }
+  }
+}
