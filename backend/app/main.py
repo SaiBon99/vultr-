@@ -15,6 +15,7 @@ from app.crawl.runner import DockerRunner
 from app.crawl.service import Slots
 from app.db import Database
 from app.deps import ApiError
+from app.judge import OpenAIJudge
 from app.receipts import S3ObjectStore, Signer
 from app.routes import audit, crawl, proxy, public, quarantine
 
@@ -62,7 +63,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.db = db
     app.state.store = _build_store(settings)
     app.state.signer = _build_signer(settings)
-    app.state.judge = None  # Phase 1: OpenAIJudge(settings) when VULTR_INFERENCE_API_KEY is set
+    # Isolated judge: only when an inference key is configured; otherwise frozen rows stay pending.
+    app.state.judge = (
+        OpenAIJudge(settings) if settings.VULTR_INFERENCE_API_KEY.get_secret_value() else None
+    )
     app.state.crawl_guard = PublicTargetGuard()
     app.state.crawl_runner = DockerRunner(settings)
     app.state.crawl_slots = Slots()
