@@ -38,7 +38,7 @@ Canonical JSON = sorted keys, compact, UTF-8; audit hash = sha256(prev_hash + "|
 ## D5: Four verdicts, 13-flag rulebook, risk_score
 
 Verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED (FAIL_CLOSED first), 13 flags with weights in x-rulebook, integer risk_score (FAIL_CLOSED floor 85), Stage 0 hidden-character stripping, +15 judge sort boost, demo runner endpoints. Change: openspec/changes/refine-verdicts-and-rulebook.
-- Why: broken provenance must outrank policy hits; reviewers need a deterministic order; the judge may raise priority but never decide ([Exploit Plan](../../docs/Exploit%20Plan.md)).
+- Why: broken provenance must outrank policy hits; reviewers need a deterministic order; the judge may raise priority but never decide ([Execution Plan, threat model](../../docs/Execution%20Plan.md#threat-model-and-detection)).
 - Context changed: supersedes the D4-era verdict names; D6 was renumbered from D5 to make room.
 - Revisit if: eval.py shows tainted-session escapes or benign false blocks.
 
