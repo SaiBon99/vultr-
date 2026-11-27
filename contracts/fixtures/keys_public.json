@@ -1,10 +1,10 @@
 {
   "alg": "Ed25519",
-  "key_id": "ce70496a3a71492c",
-  "public_key_b64": "e856C/zhv4l9y/UkTQfGcMTmIM6hZT1TJrgEi33BDoo=",
+  "key_id": "5ab12a82bef8d9c0",
+  "public_key_b64": "XRM9yAEww+ykAyuOnp884CkCeWUNGsIDKH2IZ7ZnUEI=",
   "jwk": {
     "kty": "OKP",
     "crv": "Ed25519",
-    "x": "e856C_zhv4l9y_UkTQfGcMTmIM6hZT1TJrgEi33BDoo"
+    "x": "XRM9yAEww-ykAyuOnp884CkCeWUNGsIDKH2IZ7ZnUEI"
   }
 }

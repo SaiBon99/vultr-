@@ -22,13 +22,30 @@ Regenerate fixtures: `node contracts/fixtures/generate.mjs` (new key each run, s
 4. **Receipt signature**: Ed25519 over `utf8(canon(receipt without signature_b64))`; `signature_b64` is standard base64. `key_id` = first 16 hex chars of sha256(raw 32-byte public key). `audit_head_hash` = `event_hash` of the newest audit row before the `receipt_signed` event. Stored at `s3://quarantine-receipts/receipts/<receipt_id>.json`.
 5. **Browser verification**: `crypto.subtle.importKey("jwk", jwk, {name: "Ed25519"}, false, ["verify"])`, then `verify("Ed25519", key, sig, canonBytes)`.
 
-## Gate (deterministic, in code)
+## Stage 0 (inspection copy)
 
-| Verdict | Rule flags that cause it | HTTP |
-| :--- | :--- | :--- |
-| `CLEAN_USER` | none: untainted session, no rule hit, insert only, at most 3 writes | 201, row in `memories` |
-| `TAINTED_UNREVIEWED` | `tainted_session`, `write_burst` (4th+ write in a session), `overwrite_attempt` | 202 |
-| `POLICY_BLOCKED` | `imperative_directive` (always, forward, ignore...), `external_email`, `external_url` (not on allowlist), `sensitive_tool` (send_email...), `canary_overlap`, `poison_similarity` (cosine to a purged row) | 202 |
-| `INCONCLUSIVE` | `missing_provenance`, `invalid_schema`, `judge_failed` | 202 |
+`payload_hash` and storage always use the raw bytes. The rules run on a copy with these removed: zero-width U+200B to U+200F, U+2060, U+FEFF; tag characters U+E0000 to U+E007F; bidi controls U+202A to U+202E and U+2066 to U+2069.
 
-Precedence when several hit: `POLICY_BLOCKED` > `INCONCLUSIVE` > `TAINTED_UNREVIEWED`. All hit flags are recorded. The judge never upgrades a frozen row to `CLEAN_USER`; only a reviewer `override` promotes it, as `source='external_override'`.
+## Gate (deterministic, pure code in `backend/app/gate.py`)
+
+Machine-readable source of truth: `x-rulebook` on `RuleFlag` in [openapi.yaml](openapi.yaml). Precedence: `FAIL_CLOSED` > `BLOCKED` > `NEEDS_REVIEW` > `ALLOW`; every hit flag is recorded.
+
+| Verdict | Flags (weight) | HTTP | Override |
+| :--- | :--- | :--- | :--- |
+| `FAIL_CLOSED` | `missing_provenance`, `invalid_schema`, `judge_failed` (score floor 85) | 202 | reason required |
+| `BLOCKED` | `imperative_directive` (40), `external_email` (45), `external_url` (45), `sensitive_tool` (45), `canary_overlap` (90), `poison_similarity` (90) | 202 | reason required |
+| `NEEDS_REVIEW` | `tainted_session` (25), `immediate_write_after_read` (10), `write_burst` (15), `overwrite_attempt` (25) | 202 | reason optional |
+| `ALLOW` | none: untainted, insert-only, at most 3 writes | 201, row in `memories` | n/a |
+
+- **risk_score** = `min(100, sum of weights)`; `0` for `ALLOW`; `max(85, ...)` for `FAIL_CLOSED`. Set by code at freeze; the judge never changes it.
+- **immediate_write_after_read**: session tainted and `writes_since_last_read == 0` at write time.
+- **write_burst**: the 4th and later write in a session.
+- **external_email / external_url**: host not equal to, or a strict subdomain of, an entry in `ALLOWLISTED_DOMAINS`. The host comes from a real URL parse, so userinfo (`https://good.com@evil.com`) cannot spoof it. IP literals and unparseable URLs count as external.
+- **imperative_directive**: an imperative or conditional directive aimed at an outbound action, recipient, tool or policy override (`always/when/before ... forward/send/cc/bcc/post`, `ignore/bypass previous instructions/limits`). Plain preferences (`customer always prefers net-30`) do not fire.
+- **poison_similarity**: cosine similarity to a purged tombstone embedding at or above `POISON_SIMILARITY_THRESHOLD` (0.85). Tombstones are never pre-seeded from `eval.py`.
+
+## Judge failure and review order
+
+- Judge timeout or invalid JSON: `judge_status = failed`, `judge_failed` is appended to `rule_flags`, and an audit `judge_failed` event records `{error, previous_verdict, new_verdict}`. `NEEDS_REVIEW` escalates to `FAIL_CLOSED` with `risk_score = max(risk_score, 85)`; `BLOCKED` keeps its verdict and score.
+- `effective_priority_score = risk_score + 15` when `judge_note.recommended_action == "purge"` and `risk_level` is `high` or `critical`. `GET /quarantine` sorts items by `(effective_priority_score DESC, created_at DESC)` and sessions by their top item.
+- Models never promote or downgrade. Only a reviewer `override` promotes, after `sha256(utf8(content)) == payload_hash`, as `source='external_override'`. Receipts (`purged` or `overridden`) are signed only at that decision.

@@ -48,7 +48,7 @@ for name, schema in [
     ("health.json", "Health"), ("keys_public.json", "PublicKey"), ("quarantine.json", "QuarantineList"),
     ("audit.json", "AuditLog"), ("audit_broken.json", "AuditLog"), ("memory_active.json", "ActiveMemories"),
     ("session_create.json", "CreateSessionResponse"), ("write_quarantined.json", "MemoryWriteQuarantined"),
-    ("write_accepted.json", "MemoryWriteAccepted"), (receipt_name, "Receipt"), ("receipt_tampered.json", "Receipt"),
+    ("write_accepted.json", "MemoryWriteAccepted"), ("demo_runs.json", "DemoRunList"), (receipt_name, "Receipt"), ("receipt_tampered.json", "Receipt"),
 ]:
     ok &= validate(name, schema)
 
@@ -91,6 +91,54 @@ if not verify(load(receipt_name)):
     ok = False; print("FAIL signed receipt does not verify")
 if verify(load("receipt_tampered.json")):
     ok = False; print("FAIL tampered receipt verifies")
+
+# Rulebook: every fixture verdict and risk_score must follow x-rulebook in openapi.yaml.
+rb = spec["components"]["schemas"]["RuleFlag"]["x-rulebook"]
+if sorted(rb["flags"]) != sorted(spec["components"]["schemas"]["RuleFlag"]["enum"]) or len(rb["flags"]) != 13:
+    ok = False; print("FAIL x-rulebook flags do not match the 13 RuleFlag values")
+
+
+def expected(flags):
+    tiers = {rb["flags"][f]["verdict"] for f in flags}
+    verdict = next((v for v in rb["precedence"] if v in tiers), "ALLOW")
+    score = min(100, sum(rb["flags"][f]["weight"] for f in flags))
+    return verdict, max(rb["fail_closed_floor"], score) if verdict == "FAIL_CLOSED" else score
+
+
+def check_row(where, verdict, score, flags):
+    global ok
+    pre = [f for f in flags if f != "judge_failed"]
+    if "judge_failed" in flags and expected(pre)[0] in ("NEEDS_REVIEW", "BLOCKED"):
+        v0, s0 = expected(pre)  # post-freeze escalation: NEEDS_REVIEW -> FAIL_CLOSED (floor), BLOCKED unchanged
+        want = ("FAIL_CLOSED", max(rb["fail_closed_floor"], s0)) if v0 == "NEEDS_REVIEW" else (v0, s0)
+    else:
+        want = expected(flags)
+    if (verdict, score) != want:
+        ok = False; print(f"FAIL {where}: verdict/risk_score {(verdict, score)} != rulebook {want}")
+
+
+def boost(note):
+    w = rb["judge_boost_when"]
+    return rb["judge_priority_boost"] if note and note["recommended_action"] == w["recommended_action"] and note["risk_level"] in w["risk_level"] else 0
+
+
+q = load("quarantine.json")
+tops = []
+for grp in q["sessions"]:
+    keys = []
+    for it in grp["items"]:
+        check_row(f"quarantine {it['id']}", it["verdict"], it["risk_score"], it["rule_flags"])
+        if it["effective_priority_score"] != it["risk_score"] + boost(it["judge_note"]):
+            ok = False; print(f"FAIL quarantine {it['id']}: effective_priority_score")
+        keys.append((it["effective_priority_score"], it["created_at"]))
+    if keys != sorted(keys, reverse=True):
+        ok = False; print(f"FAIL session {grp['session_id']}: items not sorted by (priority, created_at) DESC")
+    tops.append((keys[0][0], grp["created_at"]))
+if tops != sorted(tops, reverse=True):
+    ok = False; print("FAIL sessions not sorted by top item priority")
+for name in ("write_quarantined.json", receipt_name):
+    r = load(name)
+    check_row(name, r["verdict"], r["risk_score"], r["rule_flags"])
 
 print("contracts OK" if ok else "contracts FAILED")
 sys.exit(0 if ok else 1)

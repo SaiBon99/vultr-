@@ -1,4 +1,5 @@
--- contracts/schema.sql : FROZEN Phase 0 contract (Option B, vector(1024)).
+-- contracts/schema.sql : FROZEN Phase 0 contract (Option B, vector(1024)). Verdicts and risk_score per D5
+-- (openspec/changes/refine-verdicts-and-rulebook).
 -- Owner: Coordinator. infra/sql/001_init.sql applies this file; backend reads it. Change only via an OpenSpec change.
 -- Idempotent: safe to run more than once.
 
@@ -20,6 +21,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   tainted          boolean NOT NULL DEFAULT false,             -- sticky: never flips back to false
   external_sources jsonb NOT NULL DEFAULT '[]'::jsonb,         -- [{source_ref, source_kind, read_at}]
   write_count      integer NOT NULL DEFAULT 0,
+  writes_since_last_read integer NOT NULL DEFAULT 0,         -- reset to 0 on every POST /proxy/read; 0 at write time = immediate_write_after_read
   created_at       timestamptz NOT NULL DEFAULT now()
 );
 
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS quarantine_queue (
   embedding       vector(1024),                                -- retained on purge for known-poison similarity
   source          text NOT NULL CHECK (source IN ('user', 'external')),
   source_ref      text,
-  verdict         text NOT NULL CHECK (verdict IN ('TAINTED_UNREVIEWED', 'POLICY_BLOCKED', 'INCONCLUSIVE')),
+  verdict         text NOT NULL CHECK (verdict IN ('NEEDS_REVIEW', 'BLOCKED', 'FAIL_CLOSED')),
+  risk_score      integer NOT NULL DEFAULT 0 CHECK (risk_score BETWEEN 0 AND 100), -- set by code at freeze; judge never changes it
   rule_flags      jsonb NOT NULL DEFAULT '[]'::jsonb,          -- array of RuleFlag strings (contracts/openapi.yaml)
   judge_status    text NOT NULL DEFAULT 'pending' CHECK (judge_status IN ('pending', 'done', 'failed')),
   judge_note      jsonb,                                       -- contracts/judge.schema.json when judge_status = 'done'
@@ -58,10 +61,12 @@ CREATE TABLE IF NOT EXISTS quarantine_queue (
   created_at      timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT purged_has_no_content CHECK (status <> 'purged' OR content IS NULL),
   CONSTRAINT blocked_override_needs_reason CHECK (
-    NOT (status = 'overridden' AND verdict = 'POLICY_BLOCKED') OR length(btrim(coalesce(override_reason, ''))) > 0)
+    NOT (status = 'overridden' AND verdict IN ('BLOCKED', 'FAIL_CLOSED')) OR length(btrim(coalesce(override_reason, ''))) > 0),
+  CONSTRAINT fail_closed_score_floor CHECK (verdict <> 'FAIL_CLOSED' OR risk_score >= 85)
 );
 CREATE INDEX IF NOT EXISTS quarantine_session_idx ON quarantine_queue (session_id);
 CREATE INDEX IF NOT EXISTS quarantine_status_idx ON quarantine_queue (status);
+CREATE INDEX IF NOT EXISTS quarantine_priority_idx ON quarantine_queue (risk_score DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS quarantine_poison_hnsw ON quarantine_queue USING hnsw (embedding vector_cosine_ops)
   WHERE status = 'purged' AND embedding IS NOT NULL;
 

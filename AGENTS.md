@@ -1,6 +1,6 @@
 # Memory Quarantine for AI Agents
 
-Host-side Memory Proxy that gates every agent memory write by session provenance, freezes tainted writes in quarantine, has an isolated judge explain them, and waits for a human Purge or Override with signed receipts. Built for the Vultr Agent Runtime Hackathon ([brief](docs/Hackathon%20Brief.md), [idea](docs/Project%20Idea.md), [plan](docs/Execution%20Plan.md)).
+Host-side Memory Proxy that gates every agent memory write by session provenance, freezes tainted writes in quarantine, has an isolated judge explain them, and waits for a human Purge or Override with signed receipts. Built for the Vultr Agent Runtime Hackathon ([brief](docs/Hackathon%20Brief.md), [idea](docs/Project%20Idea.md), [plan](docs/Execution%20Plan.md), [exploit model](docs/Exploit%20Plan.md)).
 
 ## Layout and ownership
 | Dir | Owner | Stack | Scoped rules |
@@ -22,9 +22,9 @@ node .agents/skills/close-session/record_check.mjs       # record budgets and li
 ```
 
 ## Invariants
-1. The sandbox never holds DB credentials. `session_id` and `source` are derived server-side from `X-Session-Token`; request bodies never carry them.
+1. The sandbox holds no DB, S3 or LLM credentials and has no direct egress to Postgres (5432), Object Storage (9000) or the internet; it runs capped at 512 MB, 1 CPU and 30 s and is destroyed after each run. Everything goes through `/proxy/*`. `session_id` and `source` are derived server-side from `X-Session-Token`; request bodies never carry them.
 2. Recall reads `memories` only, through the `memory_reader` role. Quarantined rows never reach an agent.
-3. Code decides the verdict; the judge only explains. Judge failure fails closed to `INCONCLUSIVE`.
+3. Code decides the verdict (`ALLOW`, `NEEDS_REVIEW`, `BLOCKED`, `FAIL_CLOSED`) and the `risk_score`; `backend/app/gate.py` stays pure. The judge only explains or raises review priority; judge failure escalates `NEEDS_REVIEW` to `FAIL_CLOSED` and never downgrades.
 4. `audit_events` is append-only. Hashing, canonical JSON and receipt signing follow [contracts/README.md](contracts/README.md) exactly.
 5. Never read, print or commit `.env*`, private keys or tokens. Ask before destructive actions.
 
@@ -38,6 +38,7 @@ On demand: [SPECS.md](.agents/context/SPECS.md) for what a capability does (open
 | Task | File |
 | :--- | :--- |
 | Any API, DB or receipt work | [contracts/README.md](contracts/README.md), [contracts/openapi.yaml](contracts/openapi.yaml) |
+| Gate rules, flags, risk_score | [docs/Exploit Plan.md](docs/Exploit%20Plan.md), `x-rulebook` in [contracts/openapi.yaml](contracts/openapi.yaml) |
 | Changing structure | [ARCHITECTURE.md](.agents/context/ARCHITECTURE.md) |
 | UI or styling | [UI.md](.agents/context/UI.md), [frontend/DESIGN.md](frontend/DESIGN.md) |
 | Coding standards | [CODE.md](CODE.md) |

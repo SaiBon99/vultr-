@@ -8,6 +8,7 @@ const WCAG = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 test("home page has no axe violations", async ({ page }) => {
   await page.goto("/ui");
+  await page.getByTestId("quarantine-row").first().waitFor(); // SPA: wait for client render
   const results = await new AxeBuilder({ page }).withTags(WCAG).analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });

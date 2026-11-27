@@ -11,7 +11,8 @@ A superseding entry adds `- Context changed:`; one whose reason can expire (a pr
 | D2 | Option B storage, vector(1024) | active |
 | D3 | One root record; tracks own folders | active |
 | D4 | Wire rules for hashing and signing | active |
-| D5 | Chainguard MinIO images locally | active |
+| D5 | Four verdicts, 13-flag rulebook, risk_score | active |
+| D6 | Chainguard MinIO images locally | active |
 
 ## D1: Frontend stack
 
@@ -34,7 +35,14 @@ Separate `memories` (active) and `quarantine_queue` tables; `memory_reader` role
 Canonical JSON = sorted keys, compact, UTF-8; audit hash = sha256(prev_hash + "|" + canon(body)) excluding seq; receipts add `key_id` (beyond the plan's example) so the browser can match the key.
 - Why: Python and the browser must produce identical bytes; fixtures are cross-checked in both languages.
 
-## D5: Chainguard MinIO images locally
+## D5: Four verdicts, 13-flag rulebook, risk_score
+
+Verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED (FAIL_CLOSED first), 13 flags with weights in x-rulebook, integer risk_score (FAIL_CLOSED floor 85), Stage 0 hidden-character stripping, +15 judge sort boost, demo runner endpoints. Change: openspec/changes/refine-verdicts-and-rulebook.
+- Why: broken provenance must outrank policy hits; reviewers need a deterministic order; the judge may raise priority but never decide ([Exploit Plan](../../docs/Exploit%20Plan.md)).
+- Context changed: supersedes the D4-era verdict names; D6 was renumbered from D5 to make room.
+- Revisit if: eval.py shows tainted-session escapes or benign false blocks.
+
+## D6: Chainguard MinIO images locally
 
 Local S3 uses `chainguard/minio` and `chainguard/minio-client`; production uses Vultr Object Storage.
 - Why: official MinIO images could not be pulled (denied / 401) on 2026-11-27.
