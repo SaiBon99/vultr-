@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app import gate
@@ -207,3 +208,24 @@ async def write_memory(
         "payload_hash": digest,
         "content": content,
     }
+
+
+# Reviewer read for GET /quarantine. Runs on quarantine_proxy: memory_reader has no grant on this table.
+LIST_QUARANTINE_SQL = """
+SELECT q.id, q.session_id, q.status, q.content, q.payload_hash, q.source, q.source_ref,
+       q.verdict, q.risk_score, q.rule_flags, q.judge_status, q.judge_note,
+       q.override_reason, q.decided_by, q.decided_at, q.receipt_uri, q.created_at,
+       s.gate_mode, s.tainted, s.external_sources, s.write_count,
+       s.created_at AS session_created_at
+  FROM quarantine_queue q
+  JOIN sessions s ON s.id = q.session_id
+ WHERE %(status)s::text IS NULL OR q.status = %(status)s
+ ORDER BY q.created_at DESC
+"""
+
+
+async def list_quarantine(conn: AsyncConnection, status: str | None) -> list[dict[str, Any]]:
+    """Every queue row (optionally one status) joined to its session, newest first."""
+    async with conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(LIST_QUARANTINE_SQL, {"status": status})
+        return await cur.fetchall()
