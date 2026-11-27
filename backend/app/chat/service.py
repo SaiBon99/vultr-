@@ -85,6 +85,7 @@ async def _run(job: Job, queue: asyncio.Queue[dict[str, Any] | None]) -> None:
     except Exception:  # never leave the stream hanging
         log.exception("chat run crashed chat_id=%s", job.chat.chat_id)
     finally:
+        job.chat.busy = False  # safety net for any exit _run_events did not cover
         queue.put_nowait(None)
 
 
@@ -137,7 +138,8 @@ async def _run_events(job: Job, emit: Emit) -> None:
                 await run.cleanup()
         finally:
             job.slots.give()
-            chat.busy = False  # before the terminal event: the next message may follow at once
+            if error is not None or broker is None or broker.reply is None:
+                chat.busy = False  # failed or cancelled: free the chat before the terminal event
         stderr, stderr_truncated = await run.stderr_text() if run is not None else ("", False)
         runlog.finish(
             status="error" if error else "ok",
@@ -160,6 +162,7 @@ async def _run_events(job: Job, emit: Emit) -> None:
     assert container_id is not None and image_id is not None
     chat.history.append({"role": "user", "content": job.message})
     chat.history.append({"role": "assistant", "content": broker.reply})
+    chat.busy = False  # only after the exchange is in history, so the next message sees it
     emit({"type": "reply", "text": broker.reply})
     emit(
         {

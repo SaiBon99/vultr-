@@ -144,7 +144,8 @@ ok &= validate("chat_session.json", "ChatSession")
 ok &= validate("chat_stream.json", "ChatStream")
 stream = load("chat_stream.json")
 kinds = [e["type"] for e in stream]
-if kinds[0] != "run" or kinds[-1] not in ("done", "error") or (kinds[-1] == "done" and kinds[-2] != "reply"):
+body = kinds[1:-2] if kinds[-1] == "done" else kinds[1:-1]
+if kinds[0] != "run" or kinds[-1] not in ("done", "error") or (kinds[-1] == "done" and kinds[-2] != "reply") or any(k != "step" for k in body):
     ok = False; print("FAIL chat_stream.json: order must be run, step*, then reply+done or error")
 steps = [e for e in stream if e["type"] == "step"]
 if [s["index"] for s in steps] != list(range(len(steps))):

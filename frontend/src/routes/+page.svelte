@@ -32,6 +32,11 @@
   /** ?item=<quarantine id> preselects a row, e.g. from a chat remember step. */
   let selectedId = $state<string | null>(page.url.searchParams.get("item"));
   let token = $state(getReviewerToken() ?? "");
+  // Follow ?item= on same-route navigation (links from chat, Back); manual picks stand until the URL changes.
+  let urlItem = $derived(page.url.searchParams.get("item"));
+  $effect(() => {
+    if (urlItem) selectedId = urlItem;
+  });
   /** Rows decided in this tab, kept so the inspector can show the receipt after the row leaves the queue. */
   let decided = $state<
     Record<string, { item: QuarantineItem; receipt: Receipt; session: QuarantineSessionGroup | undefined }>

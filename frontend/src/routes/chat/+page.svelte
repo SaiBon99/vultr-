@@ -95,10 +95,10 @@
     }
   }
 
-  async function send(text: string) {
+  async function send(text: string, fromComposer = false) {
     const message = text.trim();
     if (!message || running) return;
-    draft = "";
+    if (fromComposer) draft = "";
     turns.push({ id: nextId++, message, running: true, run: null, steps: [], reply: null, done: null, error: null });
     const turn = turns[turns.length - 1];
     const ctrl = new AbortController();
@@ -135,13 +135,13 @@
 
   function onsubmit(event: SubmitEvent) {
     event.preventDefault();
-    void send(draft);
+    void send(draft, true);
   }
 
   function onkeydown(event: KeyboardEvent) {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
-    if (canSend) void send(draft);
+    if (canSend) void send(draft, true);
   }
 
   function sendStarter() {

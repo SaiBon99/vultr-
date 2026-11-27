@@ -7,7 +7,7 @@ import quarantine from "../../../../contracts/fixtures/quarantine.json";
 import receiptJson from "../../../../contracts/fixtures/receipts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3.json";
 import { sha256Hex } from "../crypto/auditChain";
 import { canonBytes } from "../crypto/canonical";
-import { sortQueue } from "../review";
+import { RULEBOOK, sortQueue } from "../review";
 import {
   CHAT_DELAY_MS,
   chatJudgeNotes,
@@ -402,6 +402,13 @@ export function createMockApi({
       state.sessions.push(group);
     }
     group.write_count += 1;
+    const note = clone(
+      chatJudgeNotes[d.verdict],
+    ) as (typeof chatJudgeNotes)[keyof typeof chatJudgeNotes];
+    const when = RULEBOOK.judge_boost_when;
+    const boosted =
+      note.recommended_action === when.recommended_action &&
+      (when.risk_level as readonly string[]).includes(note.risk_level);
     group.items.push({
       id: d.id,
       session_id: chat.session_id,
@@ -413,10 +420,11 @@ export function createMockApi({
       source_snippet: null,
       verdict: d.verdict,
       risk_score: d.risk_score,
-      effective_priority_score: d.risk_score,
+      effective_priority_score:
+        d.risk_score + (boosted ? RULEBOOK.judge_priority_boost : 0),
       rule_flags: d.rule_flags,
       judge_status: "done",
-      judge_note: clone(chatJudgeNotes[d.verdict]),
+      judge_note: note,
       override_reason: null,
       decided_by: null,
       decided_at: null,
