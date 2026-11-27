@@ -2,6 +2,7 @@
 // Record check (sk-init). Keeps the agent-first record small and true: byte budgets, links, the decisions
 // Index, closure conditions on unverified items, every spec mapped. No dependencies; record_check.py is its twin.
 //   node record_check.mjs [--warn]   (--warn prints problems and exits 0)
+import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 
@@ -10,6 +11,7 @@ const BUDGETS = { "AGENTS.md": 6000, [`${CTX}/STATE.md`]: 8000, [`${CTX}/LEARNIN
 const SPEC_BUDGET = 6000;
 const READ_FIRST = 24000;
 const ENTRY_LINES = 8;
+const SOURCE_DIRS = ["frontend/src", "backend/app", "backend/tests", "contracts", "infra/scripts", "infra/sql"];
 const ROUTED = ["STATE.md", "DECISIONS.md", "LEARNINGS.md", "SPECS.md"];
 
 const read = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
@@ -85,6 +87,14 @@ export function check(root) {
       }
     }
   }
+  let ignored = "";
+  try {
+    ignored = execFileSync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "--", ...SOURCE_DIRS], { cwd: root, encoding: "utf8" });
+  } catch {
+    // not a git checkout: nothing to compare against
+  }
+  const caches = /(^|\/)(node_modules|\.svelte-kit|__pycache__|\.pytest_cache|\.ruff_cache|build|test-results)\//;
+  for (const f of ignored.split("\n").filter((f) => f && !caches.test(f))) fails.push(`${f}: source file ignored by git`);
   return { fails, readFirst };
 }
 
