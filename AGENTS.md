@@ -1,6 +1,6 @@
 # Memory Quarantine for AI Agents
 
-Host-side Memory Proxy that gates every agent memory write by session provenance, freezes tainted writes in quarantine, has an isolated judge explain them, and waits for a human Purge or Override with signed receipts. Built for the Vultr Agent Runtime Hackathon ([brief](docs/Hackathon%20Brief.md), [idea](docs/Project%20Idea.md), [plan](docs/Execution%20Plan.md), [exploit model](docs/Exploit%20Plan.md)).
+Host-side Memory Proxy that gates every agent memory write by session provenance, freezes tainted writes in quarantine, has an isolated judge explain them, and waits for a human Purge or Override with signed receipts. Built for the Vultr Agent Runtime Hackathon ([brief](docs/Hackathon%20Brief.md), [idea](docs/Project%20Idea.md), [plan](docs/Execution%20Plan.md)).
 
 ## Layout and ownership
 | Dir | Owner | Stack | Scoped rules |
@@ -38,7 +38,7 @@ On demand: [SPECS.md](.agents/context/SPECS.md) for what a capability does (open
 | Task | File |
 | :--- | :--- |
 | Any API, DB or receipt work | [contracts/README.md](contracts/README.md), [contracts/openapi.yaml](contracts/openapi.yaml) |
-| Gate rules, flags, risk_score | [docs/Exploit Plan.md](docs/Exploit%20Plan.md), `x-rulebook` in [contracts/openapi.yaml](contracts/openapi.yaml) |
+| Gate rules, flags, risk_score | [Threat model and detection](docs/Execution%20Plan.md#threat-model-and-detection), `x-rulebook` in [contracts/openapi.yaml](contracts/openapi.yaml) |
 | Changing structure | [ARCHITECTURE.md](.agents/context/ARCHITECTURE.md) |
 | UI or styling | [UI.md](.agents/context/UI.md), [frontend/DESIGN.md](frontend/DESIGN.md) |
 | Coding standards | [CODE.md](CODE.md) |

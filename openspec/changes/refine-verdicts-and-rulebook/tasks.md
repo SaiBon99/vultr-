@@ -7,7 +7,7 @@
 
 ## 2. Infra (Phase 1)
 - [ ] 2.1 Mirror schema.sql into infra/sql/001_init.sql; migrate the local database
-- [ ] 2.2 .env.example: ALLOWLISTED_DOMAINS, CANARY_TOKENS, POISON_SIMILARITY_THRESHOLD, EMBEDDING_FAIL_CLOSED, SANDBOX_* caps, S3_REGION
+- [ ] 2.2 .env.example: ALLOWLISTED_DOMAINS, CANARY_TOKENS, POISON_SIMILARITY_THRESHOLD, EMBEDDING_TIMEOUT_S, SANDBOX_* caps, S3_REGION (no EMBEDDING_FAIL_CLOSED toggle; see embedding-fail-closed)
 
 ## 3. Backend (Phase 1)
 - [ ] 3.1 models.py and gate.py per the rulebook (Stage 0, 13 flags, risk_score)

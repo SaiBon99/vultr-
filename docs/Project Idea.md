@@ -18,7 +18,7 @@ Sandboxes wipe after each task, while memory persists across sessions. Because m
 
 Combines PerMIT's finite gate (trust only user inputs and gate-confirmed hashes), MemSentry's pre-commit routing (`Accept`, `Review`, `Quarantine`, which caught 100% of external quarantine threats in its benchmark), and session provenance grouping:
 
-Precedence: `FAIL_CLOSED` > `BLOCKED` > `NEEDS_REVIEW` > `ALLOW`. Full rulebook, weights and Stage 0 in [Exploit Plan.md](Exploit%20Plan.md) and [contracts/README.md](../contracts/README.md).
+Precedence: `FAIL_CLOSED` > `BLOCKED` > `NEEDS_REVIEW` > `ALLOW`. Full rulebook, weights and Stage 0 in [Execution Plan.md](Execution%20Plan.md#threat-model-and-detection) and [contracts/README.md](../contracts/README.md).
 
 | Verdict | Deterministic rule in code (rule flags) | Action |
 | --- | --- | --- |

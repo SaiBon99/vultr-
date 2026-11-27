@@ -1,7 +1,7 @@
 # Refine verdicts and rulebook
 
 ## Why
-The first contract used TAINTED_UNREVIEWED / POLICY_BLOCKED / INCONCLUSIVE with INCONCLUSIVE below POLICY_BLOCKED, no numeric priority, and no handling for hidden characters, write-right-after-read laundering or judge failure on a review-tier row. [Exploit Plan.md](../../../docs/Exploit%20Plan.md) defines a stricter, still fully deterministic model (D5).
+The first contract used TAINTED_UNREVIEWED / POLICY_BLOCKED / INCONCLUSIVE with INCONCLUSIVE below POLICY_BLOCKED, no numeric priority, and no handling for hidden characters, write-right-after-read laundering or judge failure on a review-tier row. The [Execution Plan threat model](../../../docs/Execution%20Plan.md#threat-model-and-detection) defines a stricter, still fully deterministic model (D5).
 
 ## What Changes
 - **BREAKING** Verdicts become ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED with precedence FAIL_CLOSED > BLOCKED > NEEDS_REVIEW > ALLOW.
