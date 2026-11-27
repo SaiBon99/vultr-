@@ -9,6 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.chat.memory import PgChatMemory
+from app.chat.state import Chats
 from app.config import REPO_ROOT, Settings, get_settings
 from app.crawl.guard import PublicTargetGuard
 from app.crawl.runner import DockerRunner
@@ -16,7 +18,7 @@ from app.crawl.service import Slots
 from app.db import Database
 from app.deps import ApiError
 from app.receipts import Signer
-from app.routes import audit, crawl, proxy, public, quarantine
+from app.routes import audit, chat, crawl, proxy, public, quarantine
 from app.storage import S3ObjectStore
 
 FRONTEND_BUILD = Path(__file__).resolve().parents[2] / "frontend" / "build"
@@ -66,7 +68,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.judge = None  # Phase 1: OpenAIJudge(settings) when VULTR_INFERENCE_API_KEY is set
     app.state.crawl_guard = PublicTargetGuard()
     app.state.crawl_runner = DockerRunner(settings)
-    app.state.crawl_slots = Slots()
+    app.state.crawl_slots = Slots()  # shared: /crawl and /chat together run at most 2 (D8, D10)
+    app.state.chat_runner = DockerRunner(settings, command=("/app/chat_agent.py",))
+    app.state.chat_memory = PgChatMemory(db, settings)
+    app.state.chats = Chats()
 
     @app.exception_handler(HTTPException)
     async def http_error(_: Request, exc: HTTPException) -> JSONResponse:
@@ -89,6 +94,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(quarantine.router)
     app.include_router(audit.router)
     app.include_router(crawl.router)
+    app.include_router(chat.router)
 
     if FRONTEND_BUILD.is_dir():
         app.mount("/ui", StaticFiles(directory=FRONTEND_BUILD, html=True), name="ui")

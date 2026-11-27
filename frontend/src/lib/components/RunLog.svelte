@@ -3,7 +3,8 @@
   import Badge from "#lib/components/Badge.svelte";
   import { runLogSummary } from "#lib/components/display.js";
 
-  let { runId }: { runId: string } = $props();
+  /** Which run family the id belongs to; chat runs live under /chat/runs. */
+  let { runId, source = "crawl" }: { runId: string; source?: "crawl" | "chat" } = $props();
 
   let lines = $state<RunLogLine[] | null>(null);
   let error = $state<string | null>(null);
@@ -15,7 +16,8 @@
     loading = true;
     error = null;
     try {
-      lines = await getApi().getCrawlRunLog(runId);
+      const api = getApi();
+      lines = await (source === "chat" ? api.getChatRunLog(runId) : api.getCrawlRunLog(runId));
     } catch (err) {
       error =
         err instanceof ApiError

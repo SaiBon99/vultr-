@@ -63,6 +63,26 @@ async def summarise(
             },
         ],
     }
+    data, inference_id, content = await complete(settings, payload, timeout_s)
+    title, summary, key_points = parse_reply(content)
+    raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    usage = {k: v for k in USAGE_KEYS if isinstance(v := raw_usage.get(k), int) and v >= 0}
+    model = data.get("model")
+    return Summary(
+        title=title,
+        summary=summary,
+        key_points=key_points,
+        model=model if isinstance(model, str) and model else settings.CRAWLER_MODEL,
+        inference_id=inference_id,
+        usage=usage or None,
+    )
+
+
+async def complete(
+    settings: Settings, payload: dict[str, Any], timeout_s: float
+) -> tuple[dict[str, Any], str, Any]:
+    """One chat completion, one attempt. Returns (response, completion id, message content).
+    Shared by the crawl summary and the chat turns; every failure is 502 inference_failed."""
     timeout = max(timeout_s, 0.1)
     try:
         # One attempt (max_retries=0); trust_env=False ignores host proxy variables.
@@ -92,19 +112,7 @@ async def summarise(
         content = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise CrawlError(502, "inference_failed", "inference response has no completion") from exc
-
-    title, summary, key_points = parse_reply(content)
-    raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-    usage = {k: v for k in USAGE_KEYS if isinstance(v := raw_usage.get(k), int) and v >= 0}
-    model = data.get("model")
-    return Summary(
-        title=title,
-        summary=summary,
-        key_points=key_points,
-        model=model if isinstance(model, str) and model else settings.CRAWLER_MODEL,
-        inference_id=inference_id,
-        usage=usage or None,
-    )
+    return data, inference_id, content
 
 
 def parse_reply(content: Any) -> tuple[str, str, list[str]]:

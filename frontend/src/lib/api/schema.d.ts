@@ -69,6 +69,73 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/chat/sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Start a chat with the shopping agent. Creates one quarantined memory session for the whole chat.
+     * @description The chat owns one sessions row (gate_mode quarantined). Taint is sticky across messages: once any message
+     *     browses a page, every later remember in this chat is gated as tainted. Chat history lives on the host only.
+     */
+    post: operations["createChat"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/chat/{chat_id}/messages": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Send one user message; the agent runs in one disposable sandbox and its steps stream back as Server-Sent Events.
+     * @description One message starts one Docker container (same isolation as /crawl: no network, no credentials, read-only root,
+     *     non-root, no capabilities, no mounts; SANDBOX_MAX_MEMORY_MB and SANDBOX_MAX_CPUS) capped at CHAT_TIMEOUT_S (D10).
+     *     The agent reaches the outside only through host-brokered tools:
+     *     browse (public-target guard on every hop, marks the chat session tainted), remember (deterministic gate; ALLOW
+     *     goes to memories, anything else to quarantine_queue), recall (memories only, never quarantine), place_order
+     *     (always simulated; nothing is bought) and send_email (always refused; recorded as contained egress).
+     *     At most CHAT_MAX_STEPS tool calls per message. Shares the 2-run sandbox limit with /crawl (D8).
+     *     Stream: data lines are ChatEvent JSON. Order: one run event, zero or more step events, then either a reply
+     *     event followed by done, or one error event. The stream always ends after done or error.
+     *     Refusals before the sandbox starts are plain JSON errors, not streams.
+     */
+    post: operations["sendChatMessage"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/chat/runs/{run_id}/log": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** The stored transcript of one chat message run (contracts/README.md wire rule 6). */
+    get: operations["getChatRunLog"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/demo/run": {
     parameters: {
       query?: never;
@@ -349,6 +416,149 @@ export interface components {
       /** @description s3://<bucket>/logs/crawl/<run_id>.jsonl, or null when Object Storage is missing or the upload failed */
       log_uri: string | null;
     };
+    ChatSession: {
+      /** Format: uuid */
+      chat_id: string;
+      /**
+       * Format: uuid
+       * @description The memory session this chat writes through; quarantine items group under it
+       */
+      session_id: string;
+      /** Format: date-time */
+      created_at: string;
+    };
+    ChatMessageRequest: {
+      message: string;
+    };
+    /** @enum {string} */
+    ChatTool: "browse" | "remember" | "recall" | "place_order" | "send_email";
+    /**
+     * @description refused means the host declined the action on policy (send_email always; unsafe browse target); error means it failed
+     * @enum {string}
+     */
+    ChatStepStatus: "ok" | "refused" | "error";
+    ChatBrowseDetail: {
+      /** @constant */
+      kind: "browse";
+      url: string;
+      final_url: string | null;
+      title: string | null;
+      bytes: number | null;
+      /** @description Session taint after this step; true once any page was read */
+      session_tainted: boolean;
+    };
+    ChatRememberDetail: {
+      /** @constant */
+      kind: "remember";
+      content: string;
+      verdict: components["schemas"]["Verdict"];
+      risk_score: components["schemas"]["RiskScore"];
+      rule_flags: components["schemas"]["RuleFlag"][];
+      /** @enum {string} */
+      table: "memories" | "quarantine_queue";
+      /**
+       * Format: uuid
+       * @description memories.id when ALLOW
+       */
+      id: string;
+      payload_hash: string;
+    };
+    ChatRecallDetail: {
+      /** @constant */
+      kind: "recall";
+      items: {
+        /** Format: uuid */
+        id: string;
+        content: string;
+      }[];
+    };
+    ChatOrderDetail: {
+      /** @constant */
+      kind: "place_order";
+      item: string;
+      quantity: number;
+      url: string | null;
+      /** @description SIM- prefixed id; null when refused or failed */
+      order_id: string | null;
+      /**
+       * @description Nothing is ever bought
+       * @constant
+       */
+      simulated: true;
+    };
+    ChatEmailDetail: {
+      /** @constant */
+      kind: "send_email";
+      to: string;
+      subject: string;
+      /**
+       * @description The host never sends email; the attempt is contained egress
+       * @constant
+       */
+      sent: false;
+    };
+    ChatRunEvent: {
+      /** @constant */
+      type: "run";
+      /** Format: uuid */
+      run_id: string;
+      /** Format: uuid */
+      chat_id: string;
+      limits: components["schemas"]["CrawlLimits"];
+    };
+    ChatStepEvent: {
+      /** @constant */
+      type: "step";
+      index: number;
+      tool: components["schemas"]["ChatTool"];
+      status: components["schemas"]["ChatStepStatus"];
+      /** @description One human-readable line written by the host */
+      summary: string;
+      /** @description Set when status is refused or error */
+      error_code: string | null;
+      detail:
+        | components["schemas"]["ChatBrowseDetail"]
+        | components["schemas"]["ChatRememberDetail"]
+        | components["schemas"]["ChatRecallDetail"]
+        | components["schemas"]["ChatOrderDetail"]
+        | components["schemas"]["ChatEmailDetail"]
+        | null;
+    };
+    ChatReplyEvent: {
+      /** @constant */
+      type: "reply";
+      text: string;
+    };
+    ChatErrorEvent: {
+      /** @constant */
+      type: "error";
+      /** @description timeout, inference_failed, model_output_invalid, sandbox_failed, agent_crash, step_limit */
+      code: string;
+      detail: string;
+      /** Format: uuid */
+      run_id: string;
+    };
+    ChatDoneEvent: {
+      /** @constant */
+      type: "done";
+      /** Format: uuid */
+      run_id: string;
+      elapsed_ms: number;
+      steps: number;
+      model: string;
+      usage: components["schemas"]["CrawlUsage"] | null;
+      sandbox: components["schemas"]["CrawlSandbox"];
+      /** @description s3://<bucket>/logs/chat/<run_id>.jsonl, or null */
+      log_uri: string | null;
+    };
+    ChatEvent:
+      | components["schemas"]["ChatRunEvent"]
+      | components["schemas"]["ChatStepEvent"]
+      | components["schemas"]["ChatReplyEvent"]
+      | components["schemas"]["ChatErrorEvent"]
+      | components["schemas"]["ChatDoneEvent"];
+    /** @description Fixture shape only; a recorded stream, one ChatEvent per SSE data line */
+    ChatStream: components["schemas"]["ChatEvent"][];
     DemoRunRequest: {
       /**
        * @description research_then_quote reads the seeded poisoned email in session 1, then quotes in session 2
@@ -399,7 +609,7 @@ export interface components {
       code?: string;
       /**
        * Format: uuid
-       * @description Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log
+       * @description Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log. Chat errors carry run_id in ChatErrorEvent instead
        */
       run_id?: string;
     };
@@ -848,6 +1058,140 @@ export interface operations {
         };
       };
       /** @description Object Storage is not configured on this host (code storage_missing), or it did not answer (code storage_unavailable) */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  createChat: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Chat created */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ChatSession"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description The database is not configured on this host (code database_missing) */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  sendChatMessage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        chat_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ChatMessageRequest"];
+      };
+    };
+    responses: {
+      /** @description Event stream of ChatEvent objects, one per SSE data line */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "text/event-stream": components["schemas"]["ChatEvent"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description Unknown chat_id (code chat_not_found) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description This chat already has a message running (code chat_busy) */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description Invalid body (code validation_error) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description Inference not configured (inference_not_configured), database missing (database_missing), or 2 sandbox runs already in progress (sandbox_busy) */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  getChatRunLog: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description NDJSON, one JSON object per line; run_start first, run_end last */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/x-ndjson": string;
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description No transcript for this run_id (code not_found) */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description Object Storage is not configured (storage_missing) or did not answer (storage_unavailable) */
       503: {
         headers: {
           [name: string]: unknown;

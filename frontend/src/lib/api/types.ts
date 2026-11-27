@@ -23,6 +23,31 @@ export type CrawlResult = S["CrawlResult"];
 
 export type CrawlLimits = CrawlResult["sandbox"]["limits"];
 
+export type ChatSession = S["ChatSession"];
+export type ChatTool = S["ChatTool"];
+export type ChatStepStatus = S["ChatStepStatus"];
+export type ChatRunEvent = S["ChatRunEvent"];
+export type ChatStepEvent = S["ChatStepEvent"];
+export type ChatReplyEvent = S["ChatReplyEvent"];
+export type ChatErrorEvent = S["ChatErrorEvent"];
+export type ChatDoneEvent = S["ChatDoneEvent"];
+export type ChatEvent = S["ChatEvent"];
+export type ChatRememberDetail = S["ChatRememberDetail"];
+
+/** Codes the host sends as plain JSON before a chat stream starts. */
+export type ChatRefusalCode =
+  | "chat_not_found"
+  | "chat_busy"
+  | "validation_error"
+  | "inference_not_configured"
+  | "database_missing"
+  | "sandbox_busy";
+
+export interface ChatSendOptions {
+  /** Aborts the request and ends the iterator; the host run is not cancelled. */
+  signal?: AbortSignal;
+}
+
 /** Run log lines (contracts/README.md wire rule 6). One NDJSON object per line. */
 export interface RunStartLine {
   type: "run_start";
@@ -82,6 +107,17 @@ export interface ReviewApi {
   getReceipt(id: string): Promise<Receipt>;
   crawl(body: CrawlRequest): Promise<CrawlResult>;
   getCrawlRunLog(runId: string): Promise<RunLogLine[]>;
+  createChat(): Promise<ChatSession>;
+  /**
+   * Streams one agent run. Pre-stream refusals (401, 404, 409, 422, 503) throw ApiError on the
+   * first `next()`; events after that arrive in contract order: run, step*, then reply and done, or error.
+   */
+  sendChatMessage(
+    chatId: string,
+    message: string,
+    options?: ChatSendOptions,
+  ): AsyncIterable<ChatEvent>;
+  getChatRunLog(runId: string): Promise<RunLogLine[]>;
 }
 
 export class ApiError extends Error {

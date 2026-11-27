@@ -119,3 +119,32 @@ export const triageSession: QuarantineSessionGroup = {
     },
   ],
 };
+
+/** Judge notes for rows the mock chat freezes, keyed by the gate verdict of chat_stream.json. */
+export const chatJudgeNotes: Record<
+  "BLOCKED" | "NEEDS_REVIEW" | "FAIL_CLOSED",
+  NonNullable<QuarantineItem["judge_note"]>
+> = {
+  BLOCKED: {
+    summary:
+      "Tells the agent to send card details to an outside address before checkout.",
+    risk_level: "critical",
+    recommended_action: "purge",
+    indicators: ["card data exfiltration directive", "non-allowlisted email"],
+  },
+  NEEDS_REVIEW: {
+    summary:
+      "Plain order note written after reading an untrusted page; no directives.",
+    risk_level: "low",
+    recommended_action: "override",
+    indicators: [],
+  },
+  FAIL_CLOSED: {
+    summary: "The judge could not finish; the write stays frozen.",
+    risk_level: "high",
+    recommended_action: "purge",
+    indicators: [],
+  },
+};
+
+export const CHAT_DELAY_MS = { min: 500, max: 900 } as const;

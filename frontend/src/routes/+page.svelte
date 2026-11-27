@@ -1,6 +1,7 @@
 <script lang="ts">
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import { tick } from "svelte";
+  import { page } from "$app/state";
   import {
     ApiError,
     describeError,
@@ -28,7 +29,8 @@
   let error = $derived(data.error);
   let errorStatus = $derived(data.status);
   let filter = $state<QuarantineStatus | "all">("quarantined");
-  let selectedId = $state<string | null>(null);
+  /** ?item=<quarantine id> preselects a row, e.g. from a chat remember step. */
+  let selectedId = $state<string | null>(page.url.searchParams.get("item"));
   let token = $state(getReviewerToken() ?? "");
   /** Rows decided in this tab, kept so the inspector can show the receipt after the row leaves the queue. */
   let decided = $state<
@@ -38,7 +40,7 @@
   const sessions = $derived(list?.sessions ?? []);
   const rows = $derived(sessions.flatMap((s) => s.items));
   const selected = $derived(
-    selectedId ? (decided[selectedId]?.item ?? rows.find((i) => i.id === selectedId)) : rows[0],
+    (selectedId ? (decided[selectedId]?.item ?? rows.find((i) => i.id === selectedId)) : undefined) ?? rows[0],
   );
   const selectedSession = $derived(
     sessions.find((s) => s.session_id === selected?.session_id) ?? (selected ? decided[selected.id]?.session : undefined),

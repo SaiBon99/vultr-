@@ -136,6 +136,8 @@ class RecordingRun(ProcessRun):
 class FakeRunner:
     """Runs the real agent (or a stand-in script) as a local subprocess with no environment."""
 
+    agent = AGENT  # the script run when no stand-in script is given
+
     def __init__(self, limits: Limits, script: str | None = None) -> None:
         self.limits = limits
         self.script = script
@@ -148,7 +150,7 @@ class FakeRunner:
 
         self.starts += 1
         argv = [sys.executable, "-I"]
-        argv += ["-c", self.script] if self.script else [str(AGENT)]
+        argv += ["-c", self.script] if self.script else [str(self.agent)]
         proc = await asyncio.create_subprocess_exec(
             *argv,
             stdin=asyncio.subprocess.PIPE,

@@ -13,7 +13,7 @@
   const links = [
     { href: "/", label: "Review" },
     { href: "/audit", label: "Audit log" },
-    { href: "/crawl", label: "Crawl" },
+    { href: "/chat", label: "Chat" },
   ] as const;
   const mode = apiMode();
 </script>

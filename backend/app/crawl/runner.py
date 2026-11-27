@@ -145,9 +145,10 @@ class DockerRun(ProcessRun):
 
 
 class DockerRunner:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, command: tuple[str, ...] = ()) -> None:
         self.limits = Limits.from_settings(settings)
         self.image = settings.CRAWL_SANDBOX_IMAGE
+        self.command = command  # picks the agent script in the shared image; empty: the default
 
     def argv(self, *, image_id: str, name: str, cidfile: Path) -> list[str]:
         """The full `docker run` command. No -e, --env-file, -v or --mount: nothing from host."""
@@ -168,6 +169,7 @@ class DockerRunner:
             "--cpus", str(self.limits.cpus),
             "--pids-limit", str(PIDS_LIMIT),
             image_id,
+            *self.command,
         ]  # fmt: skip
 
     async def start(self) -> DockerRun:

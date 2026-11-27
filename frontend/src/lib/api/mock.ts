@@ -1,4 +1,6 @@
 import audit from "../../../../contracts/fixtures/audit.json";
+import chatSessionJson from "../../../../contracts/fixtures/chat_session.json";
+import chatStreamJson from "../../../../contracts/fixtures/chat_stream.json";
 import health from "../../../../contracts/fixtures/health.json";
 import keys from "../../../../contracts/fixtures/keys_public.json";
 import quarantine from "../../../../contracts/fixtures/quarantine.json";
@@ -7,6 +9,8 @@ import { sha256Hex } from "../crypto/auditChain";
 import { canonBytes } from "../crypto/canonical";
 import { sortQueue } from "../review";
 import {
+  CHAT_DELAY_MS,
+  chatJudgeNotes,
   JUDGE_DELAY_MS,
   pendingItem,
   pendingResolved,
@@ -15,6 +19,10 @@ import {
 import {
   ApiError,
   type AuditLog,
+  type ChatEvent,
+  type ChatRememberDetail,
+  type ChatSession,
+  type ChatStepEvent,
   type CrawlLimits,
   type Health,
   type PublicKey,
@@ -159,6 +167,87 @@ export function mockRunLog(
   ];
 }
 
+/** Short sample transcript (wire rule 6) for a replayed chat message. */
+export function mockChatRunLog(
+  runId: string,
+  sessionId: string,
+  message: string,
+  events: ChatEvent[],
+): RunLogLine[] {
+  const run = events.find((e) => e.type === "run");
+  const steps = events.filter((e): e is ChatStepEvent => e.type === "step");
+  let seq = 0;
+  let t = 0;
+  const next = () => ({ seq: ++seq, t_ms: (t += 420) });
+  const lines: RunLogLine[] = [
+    {
+      type: "run_start",
+      run_id: runId,
+      kind: "chat",
+      session_id: sessionId,
+      started_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+      limits: run?.type === "run" ? run.limits : MOCK_LIMITS,
+      image_id: MOCK_IMAGE,
+    },
+    {
+      type: "msg",
+      ...next(),
+      dir: "host_to_agent",
+      msg: { type: "task", message },
+    },
+  ];
+  for (const step of steps)
+    lines.push(
+      {
+        type: "msg",
+        ...next(),
+        dir: "agent_to_host",
+        msg: { type: "tool_call", tool: step.tool, index: step.index },
+      },
+      {
+        type: "host",
+        ...next(),
+        event: step.tool,
+        status: step.status,
+        ...(step.error_code ? { error_code: step.error_code } : {}),
+      },
+    );
+  lines.push(
+    { type: "msg", ...next(), dir: "agent_to_host", msg: { type: "reply" } },
+    {
+      type: "run_end",
+      status: "ok",
+      http_status: 200,
+      error_code: null,
+      exit_code: 0,
+      container_id: MOCK_CONTAINER,
+      elapsed_ms: t + 100,
+      stderr: "",
+      stderr_truncated: false,
+      lines_dropped: 0,
+    },
+  );
+  return lines;
+}
+
+const randomDelay = () =>
+  CHAT_DELAY_MS.min + Math.random() * (CHAT_DELAY_MS.max - CHAT_DELAY_MS.min);
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
 const microTime = () =>
   new Date().toISOString().replace(/\.(\d{3})Z$/, ".$1000Z");
 
@@ -220,11 +309,14 @@ async function createSigner(): Promise<Signer | null> {
 export interface MockOptions {
   /** How long the pending judge row stays pending. */
   judgeDelayMs?: number;
+  /** Pause before each replayed chat event; 500 to 900 ms by default. */
+  chatDelayMs?: () => number;
 }
 
 /** Mock adapter: serves ../contracts/fixtures plus mockData rows, applies decisions in memory. */
 export function createMockApi({
   judgeDelayMs = JUDGE_DELAY_MS,
+  chatDelayMs = randomDelay,
 }: MockOptions = {}): ReviewApi {
   const base = clone<QuarantineList>(quarantine);
   base.sessions[0].items.push(clone<QuarantineItem>(pendingItem));
@@ -235,6 +327,7 @@ export function createMockApi({
   const started = Date.now();
   const receipts = new Map<string, Receipt>();
   let signer: Promise<Signer | null> | undefined;
+  const chats = new Map<string, ChatSession & { busy: boolean }>();
 
   const items = () => state.sessions.flatMap((s) => s.items);
   const find = (id: string) => items().find((i) => i.id === id);
@@ -276,6 +369,112 @@ export function createMockApi({
     if (row?.judge_status === "pending") {
       Object.assign(row, clone(pendingResolved));
       state.sessions = sortQueue(state).sessions;
+    }
+  }
+
+  /** Adds a frozen chat write to the queue so its review link opens a real row. */
+  function freeze(
+    chat: ChatSession,
+    d: ChatRememberDetail,
+    sourceRef: string | null,
+  ) {
+    if (d.verdict === "ALLOW") return;
+    let group = state.sessions.find((s) => s.session_id === chat.session_id);
+    if (!group) {
+      group = {
+        session_id: chat.session_id,
+        label: "Shopping chat",
+        gate_mode: "quarantined",
+        tainted: true,
+        external_sources: sourceRef
+          ? [
+              {
+                source_ref: sourceRef,
+                source_kind: "web",
+                read_at: microTime(),
+              },
+            ]
+          : [],
+        write_count: 0,
+        created_at: chat.created_at,
+        items: [],
+      };
+      state.sessions.push(group);
+    }
+    group.write_count += 1;
+    group.items.push({
+      id: d.id,
+      session_id: chat.session_id,
+      status: "quarantined",
+      content: d.content,
+      payload_hash: d.payload_hash,
+      source: "external",
+      source_ref: sourceRef,
+      source_snippet: null,
+      verdict: d.verdict,
+      risk_score: d.risk_score,
+      effective_priority_score: d.risk_score,
+      rule_flags: d.rule_flags,
+      judge_status: "done",
+      judge_note: clone(chatJudgeNotes[d.verdict]),
+      override_reason: null,
+      decided_by: null,
+      decided_at: null,
+      receipt_uri: null,
+      receipt_id: null,
+      created_at: microTime(),
+    });
+    state.sessions = sortQueue(state).sessions;
+  }
+
+  /** Replays chat_stream.json with fresh run and row ids, one event per chatDelayMs. */
+  async function* replayChat(
+    chatId: string,
+    message: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatEvent> {
+    const chat = chats.get(chatId);
+    if (!chat) throw new ApiError(404, "Unknown chat", "chat_not_found");
+    if (!message.trim() || message.length > 2000)
+      throw new ApiError(
+        422,
+        "A message must be 1 to 2000 characters",
+        "validation_error",
+      );
+    if (chat.busy)
+      throw new ApiError(
+        409,
+        "This chat already has a message running",
+        "chat_busy",
+      );
+    chat.busy = true;
+    const runId = crypto.randomUUID();
+    const events = clone<ChatEvent[]>(chatStreamJson);
+    let browsed: string | null = null;
+    try {
+      for (const ev of events) {
+        await wait(chatDelayMs(), signal);
+        if (ev.type === "run") ev.chat_id = chatId;
+        if (ev.type === "run" || ev.type === "error" || ev.type === "done")
+          ev.run_id = runId;
+        if (ev.type === "step" && ev.detail?.kind === "browse")
+          browsed = ev.detail.final_url ?? ev.detail.url;
+        if (ev.type === "step" && ev.detail?.kind === "remember") {
+          ev.detail.id = crypto.randomUUID();
+          if (ev.detail.table === "quarantine_queue")
+            freeze(chat, ev.detail, browsed);
+        }
+        if (ev.type === "done") {
+          ev.log_uri = `s3://mock-receipts/logs/chat/${runId}.jsonl`;
+          runLogs.set(
+            runId,
+            mockChatRunLog(runId, chat.session_id, message, events),
+          );
+        }
+        yield ev;
+      }
+    } finally {
+      chat.busy = false;
     }
   }
 
@@ -387,6 +586,26 @@ export function createMockApi({
       };
     },
     getCrawlRunLog: async (runId) => {
+      const log = runLogs.get(runId);
+      if (!log)
+        throw new ApiError(404, "No transcript for this run", "not_found");
+      return structuredClone(log);
+    },
+    createChat: async () => {
+      const fixture = clone<ChatSession>(chatSessionJson);
+      const chat: ChatSession = chats.has(fixture.chat_id)
+        ? {
+            chat_id: crypto.randomUUID(),
+            session_id: crypto.randomUUID(),
+            created_at: microTime(),
+          }
+        : fixture;
+      chats.set(chat.chat_id, { ...chat, busy: false });
+      return clone<ChatSession>(chat);
+    },
+    sendChatMessage: (chatId, message, options) =>
+      replayChat(chatId, message, options?.signal),
+    getChatRunLog: async (runId) => {
       const log = runLogs.get(runId);
       if (!log)
         throw new ApiError(404, "No transcript for this run", "not_found");

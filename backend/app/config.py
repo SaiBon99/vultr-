@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -40,9 +40,17 @@ class Settings(BaseSettings):
     SANDBOX_MAX_CPUS: int = 1
     SANDBOX_TIMEOUT_S: int = 30
 
+    CHAT_MODEL: str = ""  # empty: use CRAWLER_MODEL
+    CHAT_TIMEOUT_S: int = Field(default=90, ge=1)
+    CHAT_MAX_STEPS: int = Field(default=8, ge=1)
+
     DEMO_ALLOW_NAIVE: bool = False
     EGRESS_ALLOWLIST: str = ""
     RECEIPT_SIGNING_KEY_PATH: str = ""
+
+    @property
+    def chat_model(self) -> str:
+        return self.CHAT_MODEL.strip() or self.CRAWLER_MODEL
 
     @property
     def log_secrets(self) -> list[str]:
