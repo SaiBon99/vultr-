@@ -15,6 +15,7 @@
   import ReceiptPanel from "./ReceiptPanel.svelte";
   import RiskMeter from "./RiskMeter.svelte";
   import RuleFlags from "./RuleFlags.svelte";
+  import { judgeFailure } from "#lib/review.js";
   import VerdictBadge from "./VerdictBadge.svelte";
   import { statusLabel, statusTone } from "./display.js";
 
@@ -93,7 +94,7 @@
     </section>
   </div>
 
-  <RuleFlags flags={item.rule_flags} />
+  <RuleFlags flags={item.rule_flags} verdictKept={judgeFailure(item) === "kept"} />
   <JudgePanel {item} />
 
   {#if item.status === "quarantined"}

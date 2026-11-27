@@ -136,7 +136,7 @@
             type="password"
             autocomplete="off"
             bind:value={token}
-            class="h-control rounded-md border border-input bg-background px-md focus-visible:ring-2 focus-visible:ring-ring"
+            class="h-control rounded-md border border-input bg-background px-md focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           />
         </div>
         <button type="submit" class="h-control rounded-md bg-primary px-md text-sm font-medium text-primary-foreground focus-visible:ring-2 focus-visible:ring-ring">
@@ -196,8 +196,8 @@
                         Evaluating
                       </span>
                     {/if}
-                    <span class="ml-auto text-sm font-semibold tabular-nums" aria-label="Risk {item.risk_score} of 100">
-                      {item.risk_score}
+                    <span class="ml-auto text-sm font-semibold tabular-nums">
+                      <span class="sr-only">Risk </span>{item.risk_score}<span class="sr-only"> of 100</span>
                     </span>
                   </span>
                   <span class="line-clamp-2 text-sm">

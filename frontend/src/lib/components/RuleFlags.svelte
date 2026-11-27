@@ -7,7 +7,7 @@
   import { ALL_FLAGS, RULES, splitFlags } from "#lib/review.js";
   import { verdictLabel } from "./display.js";
 
-  let { flags }: { flags: RuleFlag[] } = $props();
+  let { flags, verdictKept = false }: { flags: RuleFlag[]; verdictKept?: boolean } = $props();
   const split = $derived(splitFlags(flags));
 </script>
 
@@ -15,7 +15,7 @@
   <h3 id="rules-title" class="font-title text-base font-semibold">
     Gate rules
     <span class="font-content text-sm font-normal text-muted-foreground"
-      >{split.failed.length} failed, {split.passed.length}/{ALL_FLAGS.length} passed</span
+      >{split.failed.length} failed</span
     >
   </h3>
 
@@ -30,10 +30,12 @@
               >, {verdictLabel[rule.verdict].toLowerCase()} tier</span
             >
           </p>
-          <p class="text-sm text-pretty text-muted-foreground">{rule.reason}</p>
+          <p class="text-sm text-pretty text-muted-foreground">
+            {flag === "judge_failed" && verdictKept ? "The judge failed. Recorded on the row; the verdict is kept." : rule.reason}
+          </p>
         </div>
-        <span class="text-sm font-medium tabular-nums" aria-label="weight {rule.weight}">
-          {rule.weight > 0 ? `+${rule.weight}` : "floor"}
+        <span class="text-sm font-medium tabular-nums">
+          <span class="sr-only">Weight </span>{rule.weight > 0 ? `+${rule.weight}` : "floor"}
         </span>
       </li>
     {/each}
@@ -41,13 +43,13 @@
 
   <Collapsible.Root>
     <Collapsible.Trigger
-      class="flex h-control w-full items-center justify-between gap-sm rounded-md px-sm text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      class="flex h-control w-full items-center justify-between gap-sm rounded-md px-sm text-sm font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
       <span class="flex items-center gap-xs">
         <Check class="size-4 text-success" aria-hidden="true" />
         {split.passed.length}/{ALL_FLAGS.length} passed
       </span>
-      <Collapsible.Indicator class="transition-transform data-[state=open]:rotate-180">
+      <Collapsible.Indicator class="transition-transform motion-reduce:transition-none data-[state=open]:rotate-180">
         <ChevronDown class="size-4" aria-hidden="true" />
       </Collapsible.Indicator>
     </Collapsible.Trigger>

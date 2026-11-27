@@ -24,7 +24,7 @@ test("review: inspect, require a reason, override and verify the receipt", async
     .click();
   await expect(inspector.getByRole("alert")).toContainText("need a reason");
   await inspector
-    .getByLabel(/Override reason/)
+    .getByLabel(/Reason to override/)
     .fill("Checked with the sales lead");
   await inspector
     .getByRole("button", { name: "Override", exact: true })

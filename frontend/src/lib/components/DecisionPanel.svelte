@@ -71,7 +71,7 @@
       rows="2"
       aria-invalid={reasonError ? "true" : undefined}
       aria-describedby="{fieldId}-hint"
-      class="rounded-md border bg-background px-sm py-xs text-sm focus-visible:ring-2 focus-visible:ring-ring {reasonError
+      class="rounded-md border bg-background px-sm py-xs text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 {reasonError
         ? 'border-destructive'
         : 'border-input'}"
     ></textarea>
