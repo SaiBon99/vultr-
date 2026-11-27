@@ -14,3 +14,15 @@ test("audit page reports chain_valid", async ({ page }) => {
     "chain_valid: true",
   );
 });
+
+test("crawl page submits a URL and shows the sandbox result", async ({
+  page,
+}) => {
+  await page.goto("/ui/crawl");
+  await expect(
+    page.getByRole("heading", { name: "Crawl a page" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Crawl" }).click();
+  await expect(page.getByRole("heading", { name: "Mock page" })).toBeVisible();
+  await expect(page.getByText("network none")).toBeVisible();
+});

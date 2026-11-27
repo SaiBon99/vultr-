@@ -4,6 +4,89 @@
  */
 
 export interface paths {
+  "/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Redirects to the Review UI. */
+    get: operations["getRoot"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/crawl": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Crawler agent - fetch one page and summarise it inside one disposable sandbox.
+     * @description One request starts one Docker container, runs one crawler agent and removes the container before the response.
+     *     The container runs under the same caps as /demo/run (SANDBOX_MAX_MEMORY_MB, SANDBOX_MAX_CPUS, SANDBOX_TIMEOUT_S),
+     *     with no network, no credentials, a read-only root filesystem, a non-root user, no capabilities and no mounts.
+     *     The host brokers the two outside calls over the container's stdin and stdout: the page fetch (public-target
+     *     guard on every redirect hop, size and type caps, logged on the host) and the model call (Vultr Serverless
+     *     Inference, CRAWLER_MODEL, at most 512 output tokens; the key never enters the container).
+     *     At most 2 runs at once; a third concurrent request gets 503 sandbox_busy. One attempt, no retry.
+     *     The call blocks until the run ends. /crawl never writes memory.
+     */
+    post: operations["crawlPage"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/demo/run": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pattern A - run the Deal Desk agent once inside a capped, disposable sandbox.
+     * @description The sandbox gets 512 MB, 1 CPU and 30 s (SANDBOX_MAX_MEMORY_MB, SANDBOX_MAX_CPUS, SANDBOX_TIMEOUT_S), zero DB, S3
+     *     or LLM credentials, and no direct egress; it reaches memory only through /proxy/* with a host-minted session token.
+     *     The sandbox is destroyed after each run; one retry is allowed when the first attempt fails on stderr.
+     *     gate_mode=naive returns 403 unless DEMO_ALLOW_NAIVE=true. The call blocks until the run ends (at most ~2 x timeout).
+     */
+    post: operations["runDemo"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/demo/runs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get: operations["listDemoRuns"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/health": {
     parameters: {
       query?: never;
@@ -50,7 +133,10 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Register external content read by the worker; sets sticky session taint. */
+    /**
+     * Register external content read by the worker; sets sticky session taint.
+     * @description Every source_kind (email, web, file, tool) taints the session permanently and resets sessions.writes_since_last_read to 0.
+     */
     post: operations["proxyRead"];
     delete?: never;
     options?: never;
@@ -68,9 +154,11 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Deterministic 4-state gate. 201 when CLEAN_USER, 202 when frozen.
+     * Stage 0 + 13-flag deterministic gate. 201 when ALLOW, 202 when frozen.
      * @description The body carries no source or session_id: both are derived server-side from X-Session-Token,
      *     so a compromised sandbox cannot claim source='user'. Unknown fields are rejected (422).
+     *     payload_hash covers the raw content bytes; the rules run on a Stage 0 inspection copy with zero-width,
+     *     tag and bidi control characters removed. Frozen rows start with judge_status=pending.
      */
     post: operations["proxyMemoryWrite"];
     delete?: never;
@@ -86,7 +174,10 @@ export interface paths {
       path?: never;
       cookie?: never;
     };
-    /** Recall from memories ONLY, via the memory_reader role. */
+    /**
+     * Recall from memories ONLY, via the memory_reader role.
+     * @description Rows whose sha256(utf8(content)) does not equal payload_hash are excluded (PerMIT hash binding).
+     */
     get: operations["proxyMemoryActive"];
     put?: never;
     post?: never;
@@ -124,9 +215,10 @@ export interface paths {
     /**
      * Purge or override one row; signs and uploads an Ed25519 receipt.
      * @description purge: sets status=purged, content=NULL; keeps payload_hash and embedding.
-     *     override: copies the row into memories with source='external_override', status=overridden.
-     *     Override of a POLICY_BLOCKED row requires a non-empty reason (422 otherwise).
-     *     A row that is not status=quarantined returns 409.
+     *     override: verifies sha256(utf8(content)) == payload_hash (409 payload_hash_mismatch otherwise), then copies
+     *     the row into memories with source='external_override', status=overridden.
+     *     Override of a BLOCKED or FAIL_CLOSED row requires a non-blank reason (422 reason_required); optional for NEEDS_REVIEW.
+     *     A row that is not status=quarantined returns 409 already_decided. Receipts are signed only here.
      */
     post: operations["decideQuarantine"];
     delete?: never;
@@ -187,9 +279,98 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    CrawlRequest: {
+      /**
+       * Format: uri
+       * @description http or https only. Private, loopback, link-local and credentialed URLs are refused.
+       */
+      url: string;
+    };
+    CrawlLimits: {
+      memory_mb: number;
+      cpus: number;
+      timeout_s: number;
+    };
+    CrawlSandbox: {
+      /** @constant */
+      runtime: "docker";
+      /** @description Full container id from the run; the container is already removed */
+      container_id: string;
+      image_id: string;
+      /** @constant */
+      network: "none";
+      limits: components["schemas"]["CrawlLimits"];
+    };
+    CrawlUsage: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
+    CrawlResult: {
+      /** Format: uri */
+      url: string;
+      /**
+       * Format: uri
+       * @description URL after redirects; every hop was SSRF-checked
+       */
+      final_url: string;
+      title: string;
+      summary: string;
+      key_points: string[];
+      model: string;
+      /** @description Completion id returned by Vultr Serverless Inference */
+      inference_id: string;
+      usage: components["schemas"]["CrawlUsage"] | null;
+      elapsed_ms: number;
+      sandbox: components["schemas"]["CrawlSandbox"];
+    };
+    DemoRunRequest: {
+      /**
+       * @description research_then_quote reads the seeded poisoned email in session 1, then quotes in session 2
+       * @enum {string}
+       */
+      scenario: "research_then_quote" | "benign_quote";
+      gate_mode: components["schemas"]["GateMode"];
+    };
+    /** @enum {string} */
+    DemoRunStatus: "completed" | "failed" | "timeout";
+    DemoRun: {
+      /** Format: uuid */
+      run_id: string;
+      scenario: string;
+      gate_mode: components["schemas"]["GateMode"];
+      session_ids: string[];
+      status: components["schemas"]["DemoRunStatus"];
+      attempts: number;
+      exit_code: number | null;
+      stdout: string;
+      stderr: string;
+      /** @description Quote text the agent produced in the quoting session */
+      quote_output: string | null;
+      containment: {
+        /** @description A canary token reached the fake send_email sink */
+        leaked: boolean;
+        outbound_attempts: number;
+        quarantined_writes: number;
+        /** @description Direct connections the sandbox attempted and was denied (host:port) */
+        blocked_egress: string[];
+      };
+      limits: {
+        memory_mb: number;
+        cpus: number;
+        timeout_s: number;
+      };
+      /** Format: date-time */
+      started_at: string;
+      /** Format: date-time */
+      finished_at: string;
+    };
+    DemoRunList: {
+      runs: components["schemas"]["DemoRun"][];
+    };
     Error: {
       detail: string;
-      /** @description Machine-readable code, e.g. reason_required, already_decided, naive_disabled */
+      /** @description Machine-readable code, e.g. reason_required, already_decided, payload_hash_mismatch, naive_disabled */
       code?: string;
     };
     /** @enum {string} */
@@ -206,21 +387,22 @@ export interface components {
     /** @enum {string} */
     GateMode: "quarantined" | "naive";
     /**
-     * @description CLEAN_USER is never stored in quarantine_queue.
+     * @description ALLOW is never stored in quarantine_queue. Precedence FAIL_CLOSED > BLOCKED > NEEDS_REVIEW > ALLOW.
      * @enum {string}
      */
-    Verdict:
-      "CLEAN_USER" | "TAINTED_UNREVIEWED" | "POLICY_BLOCKED" | "INCONCLUSIVE";
+    Verdict: "ALLOW" | "NEEDS_REVIEW" | "BLOCKED" | "FAIL_CLOSED";
     /** @enum {string} */
-    FrozenVerdict: "TAINTED_UNREVIEWED" | "POLICY_BLOCKED" | "INCONCLUSIVE";
+    FrozenVerdict: "NEEDS_REVIEW" | "BLOCKED" | "FAIL_CLOSED";
+    /** @description Deterministic min(100, sum of rule weights); 0 for ALLOW; floor 85 for FAIL_CLOSED. See x-rulebook on RuleFlag. */
+    RiskScore: number;
     /**
-     * @description tainted_session, write_burst (>3 writes in one session) and overwrite_attempt yield TAINTED_UNREVIEWED.
-     *     imperative_directive, external_email, external_url, sensitive_tool, canary_overlap and poison_similarity yield POLICY_BLOCKED.
-     *     missing_provenance, invalid_schema and judge_failed yield INCONCLUSIVE. Precedence: POLICY_BLOCKED > INCONCLUSIVE > TAINTED_UNREVIEWED.
+     * @description 13 core detectors. Verdict tier per flag and weights are in x-rulebook (machine-readable; backend gate,
+     *     frontend badges and contracts/check_contracts.py all read it). Rules run on the Stage 0 inspection copy.
      * @enum {string}
      */
     RuleFlag:
       | "tainted_session"
+      | "immediate_write_after_read"
       | "write_burst"
       | "overwrite_attempt"
       | "imperative_directive"
@@ -285,7 +467,9 @@ export interface components {
       /** @constant */
       status: "active";
       /** @constant */
-      verdict: "CLEAN_USER";
+      verdict: "ALLOW";
+      /** @constant */
+      risk_score: 0;
       /** Format: uuid */
       memory_id: string;
       payload_hash: components["schemas"]["PayloadHash"];
@@ -294,6 +478,7 @@ export interface components {
       /** @constant */
       status: "quarantined";
       verdict: components["schemas"]["FrozenVerdict"];
+      risk_score: components["schemas"]["RiskScore"];
       /** Format: uuid */
       quarantine_id: string;
       payload_hash: components["schemas"]["PayloadHash"];
@@ -341,6 +526,9 @@ export interface components {
       /** @description Up to 600 chars of the external content read in this session that matches source_ref */
       source_snippet: string | null;
       verdict: components["schemas"]["FrozenVerdict"];
+      risk_score: components["schemas"]["RiskScore"];
+      /** @description risk_score + 15 when judge_note recommends purge at high or critical risk; sort key only */
+      effective_priority_score: number;
       rule_flags: components["schemas"]["RuleFlag"][];
       judge_status: components["schemas"]["JudgeStatus"];
       judge_note: components["schemas"]["JudgeNote"] | null;
@@ -375,7 +563,7 @@ export interface components {
     DecideRequest: {
       /** @enum {string} */
       action: "purge" | "override";
-      /** @description Required (non-blank) when overriding a POLICY_BLOCKED row */
+      /** @description Required (non-blank) when overriding a BLOCKED or FAIL_CLOSED row; optional for NEEDS_REVIEW */
       reason?: string;
     };
     DecideResponse: {
@@ -436,12 +624,14 @@ export interface components {
     Receipt: {
       /** Format: uuid */
       receipt_id: string;
-      event: components["schemas"]["QuarantineStatus"];
+      /** @enum {string} */
+      event: "purged" | "overridden";
       /** Format: uuid */
       quarantine_id: string;
       /** Format: uuid */
       session_id: string;
       verdict: components["schemas"]["FrozenVerdict"];
+      risk_score: components["schemas"]["RiskScore"];
       rule_flags: components["schemas"]["RuleFlag"][];
       payload_hash: components["schemas"]["PayloadHash"];
       audit_head_hash: components["schemas"]["PayloadHash"];
@@ -511,6 +701,140 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+  getRoot: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Redirect to /ui/ */
+      307: {
+        headers: {
+          Location?: "/ui/";
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  crawlPage: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CrawlRequest"];
+      };
+    };
+    responses: {
+      /** @description Page fetched and summarised */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["CrawlResult"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      /** @description Invalid body (code validation_error), or a URL that is not a public http(s) target (code unsafe_target) */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /**
+       * @description No partial summary is returned. Codes: fetch_failed (connection, upstream status or redirect cap),
+       *     page_too_large (over CRAWL_MAX_BYTES), unsupported_content (not HTML or text), inference_failed (model
+       *     call failed or no completion id), model_output_invalid (reply is not the required JSON shape),
+       *     sandbox_failed (container did not start, or exited non-zero before speaking the protocol),
+       *     agent_crash (agent exited without a result line, or sent a malformed or unknown message).
+       */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description Inference key not configured on this host (code inference_not_configured), or 2 runs already in progress (code sandbox_busy) */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+      /** @description The sandbox hit SANDBOX_TIMEOUT_S (clock starts at container start) and was killed and removed (code timeout) */
+      504: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Error"];
+        };
+      };
+    };
+  };
+  runDemo: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DemoRunRequest"];
+      };
+    };
+    responses: {
+      /** @description Run finished (completed, failed or timeout) */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DemoRun"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+      403: components["responses"]["Forbidden"];
+      422: components["responses"]["ValidationError"];
+    };
+  };
+  listDemoRuns: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Past runs, newest first */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DemoRunList"];
+        };
+      };
+      401: components["responses"]["Unauthorized"];
+    };
+  };
   getHealth: {
     parameters: {
       query?: never;
@@ -599,7 +923,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description CLEAN_USER, promoted to memories */
+      /** @description ALLOW, promoted to memories (risk_score 0) */
       201: {
         headers: {
           [name: string]: unknown;
@@ -608,7 +932,7 @@ export interface operations {
           "application/json": components["schemas"]["MemoryWriteAccepted"];
         };
       };
-      /** @description Frozen in quarantine_queue (TAINTED_UNREVIEWED, POLICY_BLOCKED or INCONCLUSIVE) */
+      /** @description Frozen in quarantine_queue (NEEDS_REVIEW, BLOCKED or FAIL_CLOSED) */
       202: {
         headers: {
           [name: string]: unknown;
@@ -658,7 +982,11 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Quarantine rows grouped by session_id, newest session first */
+      /**
+       * @description Rows grouped by session_id. Items sort by (effective_priority_score DESC, created_at DESC);
+       *     sessions sort by their highest item effective_priority_score, then created_at DESC.
+       *     Use status=quarantined for the live review queue.
+       */
       200: {
         headers: {
           [name: string]: unknown;
