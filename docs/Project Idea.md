@@ -9,25 +9,27 @@ Sandboxes wipe after each task, while memory persists across sessions. Because m
 ## Solution
 
 1. A sandboxed B2B Sales / Deal Desk assistant runs in a Vultr Microsandbox with zero DB credentials. Both external reads (`POST /proxy/read`) and memory calls (`POST /proxy/memory/write`, `GET /proxy/memory/active`) pass through a host-side FastAPI Memory Proxy using a host-minted `session_id`, so a compromised sandbox cannot spoof `source='user'`.
-2. Any session that reads an email or web page gets sticky session taint across all turns. Code evaluates the deterministic rule table, freezes tainted writes (`HTTP 202`, `quarantined`), saves the incident state in Managed PostgreSQL, and exits the microVM cleanly.
-3. An isolated judge model on Serverless Inference (separate from the worker, with no raw session access) reads only the frozen content, provenance, and rule flags, returning strict JSON (`summary`, `risk_level`, `recommended_action`).
-4. A reviewer opens the Quarantine Review UI (`GET /ui`), inspects session-grouped rows alongside raw source snippets, rule verdicts, and judge notes, and clicks `Purge` or `Override` per row (`POLICY_BLOCKED` overrides require a typed reason).
+2. Any session that reads an email or web page gets sticky session taint across all turns. Code strips zero-width and bidi characters from an inspection copy (Stage 0; the hash covers the raw bytes), evaluates the 13-flag deterministic rulebook, freezes tainted writes (`HTTP 202`, `quarantined`), saves the incident state in Managed PostgreSQL, and exits the microVM cleanly.
+3. An isolated judge model on Serverless Inference (separate from the worker, with no raw session access) reads only the frozen content, provenance, and rule flags, returning strict JSON (`summary`, `risk_level`, `recommended_action`, `indicators`). The judge explains and can raise review priority; it never changes a verdict.
+4. A reviewer opens the Quarantine Review UI (`GET /ui`), inspects session-grouped rows alongside raw source snippets, rule verdicts, and judge notes, and clicks `Purge` or `Override` per row (`BLOCKED` and `FAIL_CLOSED` overrides require a typed reason). Rows are sorted by a deterministic `risk_score` (0-100) plus a +15 boost when the judge recommends purge at high or critical risk.
 5. Every step appends to a `SHA-256` hash chain (`audit_events`) and saves an Ed25519-signed receipt to Vultr Object Storage; future sessions query only `active` rows.
 
 ### Deterministic gate rules
 
 Combines PerMIT's finite gate (trust only user inputs and gate-confirmed hashes), MemSentry's pre-commit routing (`Accept`, `Review`, `Quarantine`, which caught 100% of external quarantine threats in its benchmark), and session provenance grouping:
 
-| Verdict | Deterministic rule in code | Action |
+Precedence: `FAIL_CLOSED` > `BLOCKED` > `NEEDS_REVIEW` > `ALLOW`. Full rulebook, weights and Stage 0 in [Exploit Plan.md](Exploit%20Plan.md) and [contracts/README.md](../contracts/README.md).
+
+| Verdict | Deterministic rule in code (rule flags) | Action |
 | --- | --- | --- |
-| `CLEAN_USER` | Zero external reads in session, no rule hits, and insert-only (does not overwrite existing active rows) | Promoted to `active` |
-| `TAINTED_UNREVIEWED` | Write or update in a tainted session, or more than 3 writes in one `session_id` | Frozen for per-row review (grouped by `session_id`) |
-| `POLICY_BLOCKED` | Imperative directives (`always`, `forward`, `ignore`), non-allowlisted external email/URL, sensitive tool names (`send_email`), canary overlap, or `pgvector` similarity to previously confirmed poison (never pre-seeded from `eval.py`) | Locked against auto-promotion; human `Override` requires a typed reason |
-| `INCONCLUSIVE` | Missing provenance, invalid schema, or post-freeze judge JSON parse failure | Fails closed in quarantine |
+| `ALLOW` | Zero external reads in session, no rule hits, insert-only, at most 3 writes | `HTTP 201`, promoted to `memories` (`risk_score` 0) |
+| `NEEDS_REVIEW` | `tainted_session`, `immediate_write_after_read`, `write_burst` (more than 3 writes in one `session_id`), `overwrite_attempt` | `HTTP 202`, frozen for per-row review; override reason optional |
+| `BLOCKED` | `imperative_directive` (aimed at an outbound action or policy override, not plain preferences), `external_email` and `external_url` (not on `ALLOWLISTED_DOMAINS`), `sensitive_tool` (`send_email`), `canary_overlap`, `poison_similarity` to a purged tombstone (never pre-seeded from `eval.py`) | `HTTP 202`, locked against auto-promotion; `Override` requires a typed reason |
+| `FAIL_CLOSED` | `missing_provenance`, `invalid_schema`, or post-freeze `judge_failed` (escalates `NEEDS_REVIEW`; a `BLOCKED` row stays `BLOCKED`) | `HTTP 202`, `risk_score` floor 85; `Override` requires a typed reason |
 
 ### Storage options (team decision)
 
-Records store `content`, server-assigned `source`, `session_id`, `source_ref`, `payload_hash`, `verdict`, `rule_flags`, `judge_note`, `override_reason`, `receipt_uri`, and embedding, paired with `audit_events` and Object Storage receipts (`Purge` wipes `content` while keeping `payload_hash` as a tombstone in DB and the signed receipt):
+Records store `content`, server-assigned `source`, `session_id`, `source_ref`, `payload_hash`, `verdict`, `risk_score`, `rule_flags`, `judge_note`, `override_reason`, `receipt_uri`, and embedding, paired with `audit_events` and Object Storage receipts (`Purge` wipes `content` while keeping `payload_hash` as a tombstone in DB and the signed receipt):
 
 | Option | How isolation works | Trade-off |
 | --- | --- | --- |
@@ -53,7 +55,7 @@ Both runs use the same Serverless Inference worker model and log to `GET /demo/r
 1. Naive baseline (`gate_mode=naive` proxy bypass): the worker reads a poisoned email in Session 1, writes the dormant instruction to memory, and leaks the canary pricing via `send_email` in Session 2.
 2. Quarantined run: the proxy freezes the write on provenance and rule hits, the judge explains the payload, the reviewer purges the row in `GET /ui`, and Session 2 leaks nothing.
 
-To measure containment and false positives, `eval.py` runs 10 seeded attacks (direct, split-write, and dormant keyword triggers) plus 6 benign look-alike notes (testing both untainted user notes and external notes that pass without hitting `POLICY_BLOCKED`), reporting leak rate, benign clearance, latency, and token cost.
+To measure containment and false positives, `eval.py` runs 10 seeded attacks (direct, split-write, and dormant keyword triggers) plus 6 benign look-alike notes (testing both untainted user notes and external notes that pass without hitting `BLOCKED`), reporting leak rate, benign clearance, latency, and token cost.
 
 ## Limits
 
@@ -65,7 +67,7 @@ A few decisions and checks the team may want to walk through together:
 
 - [ ] Agree on the buyer scenario: keep the B2B Sales / Deal Desk assistant protecting floor pricing, or pick another workflow with a clear leak target.
 - [ ] Choose a storage layout: Option A (`memories` table with `status` filter) or Option B (separate `quarantine_queue` table).
-- [ ] Confirm the deterministic gate thresholds (such as the 3-write burst limit and domain allowlist) and `POLICY_BLOCKED` typed override policy.
+- [ ] Confirm the deterministic gate thresholds (such as the 3-write burst limit and domain allowlist) and the `BLOCKED` / `FAIL_CLOSED` typed override policy.
 - [ ] Review the honeypot seeded emails, canary secrets, and `eval.py` attack vs. benign test mix.
 - [ ] Walk through the `Read first` Vultr docs and split up work across the proxy, sandboxed agent, and Review UI.
 
@@ -101,7 +103,7 @@ Started at 32/50 on the initial draft against the Nov 2026 winners; implementing
 
 | Criterion | What the winners did | Initial draft | Target with design |
 | --- | --- | --- | --- |
-| Code decides, model explains | Airlock's rule table sets the verdict; Errand checks the budget in code | 4/5 | 5/5 (4-state gate + `INCONCLUSIVE`) |
+| Code decides, model explains | Airlock's rule table sets the verdict; Errand checks the budget in code | 4/5 | 5/5 (4-state gate + `FAIL_CLOSED`) |
 | Human approves the risky step | Suspicious PRs, payment actions, and orders wait for a person | 2/5 | 5/5 (`GET /ui` per-row gate + typed override) |
 | One buyer, one costly job | PR review, supplier payments, purchasing | 2/5 | 5/5 (Deal Desk floor pricing) |
 | Containment proven every run | Canary keys; a credential-leak probe on every supplier visit | 5/5 | 5/5 (Session 2 canary + `send_email` probe) |

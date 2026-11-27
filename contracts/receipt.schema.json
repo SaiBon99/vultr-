@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://memory-quarantine.local/contracts/receipt.schema.json",
   "title": "Signed cleanup receipt (FROZEN Phase 0 contract)",
-  "description": "Ed25519 signature over canonical JSON of this object with signature_b64 removed. Canonical JSON: contracts/README.md.",
+  "description": "Signed only when a human decides (purge or override). Ed25519 signature over canonical JSON of this object with signature_b64 removed. Canonical JSON: contracts/README.md.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -11,6 +11,7 @@
     "quarantine_id",
     "session_id",
     "verdict",
+    "risk_score",
     "rule_flags",
     "payload_hash",
     "audit_head_hash",
@@ -27,7 +28,6 @@
     },
     "event": {
       "enum": [
-        "quarantined",
         "purged",
         "overridden"
       ]
@@ -42,16 +42,24 @@
     },
     "verdict": {
       "enum": [
-        "TAINTED_UNREVIEWED",
-        "POLICY_BLOCKED",
-        "INCONCLUSIVE"
+        "NEEDS_REVIEW",
+        "BLOCKED",
+        "FAIL_CLOSED"
       ]
+    },
+    "risk_score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Deterministic score at decision time (contracts/README.md)"
     },
     "rule_flags": {
       "type": "array",
+      "uniqueItems": true,
       "items": {
         "enum": [
           "tainted_session",
+          "immediate_write_after_read",
           "write_burst",
           "overwrite_attempt",
           "imperative_directive",

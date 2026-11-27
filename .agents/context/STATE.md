@@ -3,19 +3,18 @@
 Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, sessions in history/. Budget 8 KB.
 
 ## Working
-- Contracts frozen (Phase 0): [contracts/README.md](../../contracts/README.md); `check_contracts.py` passes; 3 OpenSpec specs validate.
-- Infra local stack: pgvector PG16 + MinIO via `infra/docker-compose.yml`; `infra/scripts/smoke_check.py` 6/6; local signing key in `infra/keys/` (git-ignored).
-- Backend skeleton: 76 offline tests + ruff pass. Live: `/health`, `/keys/public`, `/receipts/{id}`, auth 401s, spoofed `source` 422, `/ui` static mount. Verified against local DB and MinIO via `backend/scripts/serve.py`.
-- Frontend shell: adapter-static at base `/ui`, typed client from openapi.yaml, mock adapter on contracts/fixtures, Web Crypto receipt and audit-chain verification (6 Vitest), Playwright smoke 2/2; `check:unified` passes.
+- Contracts 0.2.0 (D5): four verdicts, 13-flag x-rulebook, risk_score, demo endpoints; `check_contracts.py` passes including rulebook and sort checks. Change `refine-verdicts-and-rulebook` and 3 specs validate (strict).
+- Infra local stack (pre-D5 schema): compose up, smoke_check 6/6.
+- Backend skeleton (pre-D5 names): 77 offline tests + ruff pass; `/health`, `/keys/public`, auth, spoof 422, `/ui` mount.
+- Frontend shell (pre-D5 types): adapter-static at `/ui`, mock adapter, Web Crypto verification; `check:unified` passes.
 
 ## Not working or unverified
-- DB-backed endpoints (`/proxy/sessions`, `/proxy/read`, `/proxy/memory/*`, `/quarantine*`, `/audit`) return 501. closed when: Gate 1 pytest hits local Postgres and a tainted write returns 202.
-- Session token checked for presence only. closed when: token hash looked up in `sessions`.
-- Review UI badges render as plain text; Purge/Override, receipt viewer and token entry not built. closed when: Phase 1 frontend done check passes.
-- Acme tokens mapping into `frontend/tokens/` not reviewed (brand colour confirmed). closed when: tokens diffed against `frontend/acme/tokens.json`.
-- `JUDGE_MODEL_FALLBACK` missing from backend config; `S3_REGION` missing from `infra/.env.example`. closed when: both present.
-- Vultr resources and `vultr_provision.sh` flags (placeholders). closed when: Gate 2 `demo_smoke.py` passes on the live stack.
+- Tracks still use the old verdict names. closed when: infra, backend and frontend Phase 1 tasks in [tasks.md](../../openspec/changes/refine-verdicts-and-rulebook/tasks.md) are done and each track check passes against fixtures 0.2.0.
+- `infra/sql/001_init.sql` and the running local DB lack D5 columns. closed when: 001_init.sql mirrors contracts/schema.sql and smoke_check passes after re-apply.
+- DB-backed endpoints return 501; session token checked for presence only. closed when: Gate 1 pytest hits local Postgres and a tainted write returns 202.
+- Demo runner and sandbox egress test not built. closed when: `POST /demo/run` quarantined run reports leaked=false and `test_egress.py` passes.
+- Vultr resources (placeholders in vultr_provision.sh). closed when: Gate 2 `demo_smoke.py` passes on the live stack.
 
 ## Next
-1. Phase 1 in parallel per [docs/Execution Plan.md](../../docs/Execution%20Plan.md): backend repo layer + routes on local Postgres; frontend Review UI actions; infra Vultr scripts.
-2. Gate 1 checks.
+1. Phase 1 in parallel: infra, backend, frontend per the change tasks.
+2. Archive `refine-verdicts-and-rulebook` once Gate 1 passes.

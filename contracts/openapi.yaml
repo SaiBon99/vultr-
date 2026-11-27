@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: Memory Quarantine Proxy
-  version: 0.1.0
+  version: 0.2.0
   description: |
     FROZEN Phase 0 contract. Owner: Coordinator. Backend implements it; frontend consumes it.
     Change only through an OpenSpec change in openspec/changes/.
-    Canonical JSON, hash-chain and receipt-signing rules: contracts/README.md.
+    Canonical JSON, hash-chain, receipt-signing rules, Stage 0 and the rulebook: contracts/README.md.
+    0.2.0 (D5, openspec/changes/refine-verdicts-and-rulebook): verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED, 13 rule flags, risk_score.
 servers:
   - url: http://localhost:8000
     description: Local (FastAPI also serves frontend/build at /ui)
@@ -16,7 +17,59 @@ tags:
   - name: review
     description: Called by the Quarantine Review UI
   - name: public
+  - name: demo
+    description: Pattern A Deal Desk runner (honeypot comparison of naive vs quarantined)
 paths:
+  /:
+    get:
+      tags: [public]
+      operationId: getRoot
+      summary: Redirects to the Review UI.
+      responses:
+        '307':
+          description: Redirect to /ui/
+          headers:
+            Location:
+              schema: { type: string, const: /ui/ }
+  /demo/run:
+    post:
+      tags: [demo]
+      operationId: runDemo
+      summary: Pattern A - run the Deal Desk agent once inside a capped, disposable sandbox.
+      description: |
+        The sandbox gets 512 MB, 1 CPU and 30 s (SANDBOX_MAX_MEMORY_MB, SANDBOX_MAX_CPUS, SANDBOX_TIMEOUT_S), zero DB, S3
+        or LLM credentials, and no direct egress; it reaches memory only through /proxy/* with a host-minted session token.
+        The sandbox is destroyed after each run; one retry is allowed when the first attempt fails on stderr.
+        gate_mode=naive returns 403 unless DEMO_ALLOW_NAIVE=true. The call blocks until the run ends (at most ~2 x timeout).
+      security:
+        - ReviewerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DemoRunRequest' }
+      responses:
+        '200':
+          description: Run finished (completed, failed or timeout)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRun' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /demo/runs:
+    get:
+      tags: [demo]
+      operationId: listDemoRuns
+      security:
+        - ReviewerToken: []
+      responses:
+        '200':
+          description: Past runs, newest first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRunList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /health:
     get:
       tags: [public]
@@ -57,6 +110,7 @@ paths:
       tags: [proxy]
       operationId: proxyRead
       summary: Register external content read by the worker; sets sticky session taint.
+      description: Every source_kind (email, web, file, tool) taints the session permanently and resets sessions.writes_since_last_read to 0.
       security:
         - SessionToken: []
       requestBody:
@@ -76,10 +130,12 @@ paths:
     post:
       tags: [proxy]
       operationId: proxyMemoryWrite
-      summary: Deterministic 4-state gate. 201 when CLEAN_USER, 202 when frozen.
+      summary: Stage 0 + 13-flag deterministic gate. 201 when ALLOW, 202 when frozen.
       description: |
         The body carries no source or session_id: both are derived server-side from X-Session-Token,
         so a compromised sandbox cannot claim source='user'. Unknown fields are rejected (422).
+        payload_hash covers the raw content bytes; the rules run on a Stage 0 inspection copy with zero-width,
+        tag and bidi control characters removed. Frozen rows start with judge_status=pending.
       security:
         - SessionToken: []
       requestBody:
@@ -89,12 +145,12 @@ paths:
             schema: { $ref: '#/components/schemas/MemoryWriteRequest' }
       responses:
         '201':
-          description: CLEAN_USER, promoted to memories
+          description: ALLOW, promoted to memories (risk_score 0)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MemoryWriteAccepted' }
         '202':
-          description: Frozen in quarantine_queue (TAINTED_UNREVIEWED, POLICY_BLOCKED or INCONCLUSIVE)
+          description: Frozen in quarantine_queue (NEEDS_REVIEW, BLOCKED or FAIL_CLOSED)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MemoryWriteQuarantined' }
@@ -105,6 +161,7 @@ paths:
       tags: [proxy]
       operationId: proxyMemoryActive
       summary: Recall from memories ONLY, via the memory_reader role.
+      description: Rows whose sha256(utf8(content)) does not equal payload_hash are excluded (PerMIT hash binding).
       security:
         - SessionToken: []
       parameters:
@@ -138,7 +195,10 @@ paths:
           schema: { $ref: '#/components/schemas/QuarantineStatus' }
       responses:
         '200':
-          description: Quarantine rows grouped by session_id, newest session first
+          description: |
+            Rows grouped by session_id. Items sort by (effective_priority_score DESC, created_at DESC);
+            sessions sort by their highest item effective_priority_score, then created_at DESC.
+            Use status=quarantined for the live review queue.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/QuarantineList' }
@@ -150,9 +210,10 @@ paths:
       summary: Purge or override one row; signs and uploads an Ed25519 receipt.
       description: |
         purge: sets status=purged, content=NULL; keeps payload_hash and embedding.
-        override: copies the row into memories with source='external_override', status=overridden.
-        Override of a POLICY_BLOCKED row requires a non-empty reason (422 otherwise).
-        A row that is not status=quarantined returns 409.
+        override: verifies sha256(utf8(content)) == payload_hash (409 payload_hash_mismatch otherwise), then copies
+        the row into memories with source='external_override', status=overridden.
+        Override of a BLOCKED or FAIL_CLOSED row requires a non-blank reason (422 reason_required); optional for NEEDS_REVIEW.
+        A row that is not status=quarantined returns 409 already_decided. Receipts are signed only here.
       security:
         - ReviewerToken: []
       parameters:
@@ -272,6 +333,66 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
   schemas:
+    DemoRunRequest:
+      type: object
+      additionalProperties: false
+      required: [scenario, gate_mode]
+      properties:
+        scenario:
+          type: string
+          enum: [research_then_quote, benign_quote]
+          description: research_then_quote reads the seeded poisoned email in session 1, then quotes in session 2
+        gate_mode: { $ref: '#/components/schemas/GateMode' }
+    DemoRunStatus:
+      type: string
+      enum: [completed, failed, timeout]
+    DemoRun:
+      type: object
+      additionalProperties: false
+      required: [run_id, scenario, gate_mode, session_ids, status, attempts, exit_code, stdout, stderr, quote_output, containment, limits, started_at, finished_at]
+      properties:
+        run_id: { type: string, format: uuid }
+        scenario: { type: string }
+        gate_mode: { $ref: '#/components/schemas/GateMode' }
+        session_ids:
+          type: array
+          items: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/DemoRunStatus' }
+        attempts: { type: integer, minimum: 1, maximum: 2 }
+        exit_code: { type: [integer, 'null'] }
+        stdout: { type: string, maxLength: 65536 }
+        stderr: { type: string, maxLength: 65536 }
+        quote_output: { type: [string, 'null'], description: Quote text the agent produced in the quoting session }
+        containment:
+          type: object
+          additionalProperties: false
+          required: [leaked, outbound_attempts, quarantined_writes, blocked_egress]
+          properties:
+            leaked: { type: boolean, description: A canary token reached the fake send_email sink }
+            outbound_attempts: { type: integer, minimum: 0 }
+            quarantined_writes: { type: integer, minimum: 0 }
+            blocked_egress:
+              type: array
+              items: { type: string }
+              description: Direct connections the sandbox attempted and was denied (host:port)
+        limits:
+          type: object
+          additionalProperties: false
+          required: [memory_mb, cpus, timeout_s]
+          properties:
+            memory_mb: { type: integer }
+            cpus: { type: integer }
+            timeout_s: { type: integer }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    DemoRunList:
+      type: object
+      additionalProperties: false
+      required: [runs]
+      properties:
+        runs:
+          type: array
+          items: { $ref: '#/components/schemas/DemoRun' }
     Error:
       type: object
       additionalProperties: false
@@ -280,7 +401,7 @@ components:
         detail: { type: string }
         code:
           type: string
-          description: Machine-readable code, e.g. reason_required, already_decided, naive_disabled
+          description: Machine-readable code, e.g. reason_required, already_decided, payload_hash_mismatch, naive_disabled
     HealthCheck:
       type: string
       enum: [ok, error, skipped]
@@ -303,19 +424,24 @@ components:
       enum: [quarantined, naive]
     Verdict:
       type: string
-      description: CLEAN_USER is never stored in quarantine_queue.
-      enum: [CLEAN_USER, TAINTED_UNREVIEWED, POLICY_BLOCKED, INCONCLUSIVE]
+      description: ALLOW is never stored in quarantine_queue. Precedence FAIL_CLOSED > BLOCKED > NEEDS_REVIEW > ALLOW.
+      enum: [ALLOW, NEEDS_REVIEW, BLOCKED, FAIL_CLOSED]
     FrozenVerdict:
       type: string
-      enum: [TAINTED_UNREVIEWED, POLICY_BLOCKED, INCONCLUSIVE]
+      enum: [NEEDS_REVIEW, BLOCKED, FAIL_CLOSED]
+    RiskScore:
+      type: integer
+      minimum: 0
+      maximum: 100
+      description: Deterministic min(100, sum of rule weights); 0 for ALLOW; floor 85 for FAIL_CLOSED. See x-rulebook on RuleFlag.
     RuleFlag:
       type: string
       description: |
-        tainted_session, write_burst (>3 writes in one session) and overwrite_attempt yield TAINTED_UNREVIEWED.
-        imperative_directive, external_email, external_url, sensitive_tool, canary_overlap and poison_similarity yield POLICY_BLOCKED.
-        missing_provenance, invalid_schema and judge_failed yield INCONCLUSIVE. Precedence: POLICY_BLOCKED > INCONCLUSIVE > TAINTED_UNREVIEWED.
+        13 core detectors. Verdict tier per flag and weights are in x-rulebook (machine-readable; backend gate,
+        frontend badges and contracts/check_contracts.py all read it). Rules run on the Stage 0 inspection copy.
       enum:
         - tainted_session
+        - immediate_write_after_read
         - write_burst
         - overwrite_attempt
         - imperative_directive
@@ -327,6 +453,28 @@ components:
         - missing_provenance
         - invalid_schema
         - judge_failed
+      x-rulebook:
+        precedence: [FAIL_CLOSED, BLOCKED, NEEDS_REVIEW, ALLOW]
+        max_clean_writes: 3
+        fail_closed_floor: 85
+        judge_priority_boost: 15
+        judge_boost_when:
+          recommended_action: purge
+          risk_level: [high, critical]
+        flags:
+          tainted_session: { verdict: NEEDS_REVIEW, weight: 25 }
+          immediate_write_after_read: { verdict: NEEDS_REVIEW, weight: 10 }
+          write_burst: { verdict: NEEDS_REVIEW, weight: 15 }
+          overwrite_attempt: { verdict: NEEDS_REVIEW, weight: 25 }
+          imperative_directive: { verdict: BLOCKED, weight: 40 }
+          external_email: { verdict: BLOCKED, weight: 45 }
+          external_url: { verdict: BLOCKED, weight: 45 }
+          sensitive_tool: { verdict: BLOCKED, weight: 45 }
+          canary_overlap: { verdict: BLOCKED, weight: 90 }
+          poison_similarity: { verdict: BLOCKED, weight: 90 }
+          missing_provenance: { verdict: FAIL_CLOSED, weight: 0 }
+          invalid_schema: { verdict: FAIL_CLOSED, weight: 0 }
+          judge_failed: { verdict: FAIL_CLOSED, weight: 0 }
     QuarantineStatus:
       type: string
       enum: [quarantined, purged, overridden]
@@ -401,19 +549,21 @@ components:
     MemoryWriteAccepted:
       type: object
       additionalProperties: false
-      required: [status, verdict, memory_id, payload_hash]
+      required: [status, verdict, risk_score, memory_id, payload_hash]
       properties:
         status: { type: string, const: active }
-        verdict: { type: string, const: CLEAN_USER }
+        verdict: { type: string, const: ALLOW }
+        risk_score: { type: integer, const: 0 }
         memory_id: { type: string, format: uuid }
         payload_hash: { $ref: '#/components/schemas/PayloadHash' }
     MemoryWriteQuarantined:
       type: object
       additionalProperties: false
-      required: [status, verdict, quarantine_id, payload_hash, rule_flags]
+      required: [status, verdict, risk_score, quarantine_id, payload_hash, rule_flags]
       properties:
         status: { type: string, const: quarantined }
         verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        risk_score: { $ref: '#/components/schemas/RiskScore' }
         quarantine_id: { type: string, format: uuid }
         payload_hash: { $ref: '#/components/schemas/PayloadHash' }
         rule_flags:
@@ -468,6 +618,8 @@ components:
         - source_ref
         - source_snippet
         - verdict
+        - risk_score
+        - effective_priority_score
         - rule_flags
         - judge_status
         - judge_note
@@ -489,8 +641,15 @@ components:
           type: [string, 'null']
           description: Up to 600 chars of the external content read in this session that matches source_ref
         verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        risk_score: { $ref: '#/components/schemas/RiskScore' }
+        effective_priority_score:
+          type: integer
+          minimum: 0
+          maximum: 115
+          description: risk_score + 15 when judge_note recommends purge at high or critical risk; sort key only
         rule_flags:
           type: array
+          uniqueItems: true
           items: { $ref: '#/components/schemas/RuleFlag' }
         judge_status: { $ref: '#/components/schemas/JudgeStatus' }
         judge_note:
@@ -537,7 +696,7 @@ components:
         reason:
           type: string
           maxLength: 1000
-          description: Required (non-blank) when overriding a POLICY_BLOCKED row
+          description: Required (non-blank) when overriding a BLOCKED or FAIL_CLOSED row; optional for NEEDS_REVIEW
     DecideResponse:
       type: object
       additionalProperties: false
@@ -610,6 +769,7 @@ components:
         - quarantine_id
         - session_id
         - verdict
+        - risk_score
         - rule_flags
         - payload_hash
         - audit_head_hash
@@ -620,12 +780,14 @@ components:
         - signature_b64
       properties:
         receipt_id: { type: string, format: uuid }
-        event: { $ref: '#/components/schemas/QuarantineStatus' }
+        event: { type: string, enum: [purged, overridden] }
         quarantine_id: { type: string, format: uuid }
         session_id: { type: string, format: uuid }
         verdict: { $ref: '#/components/schemas/FrozenVerdict' }
+        risk_score: { $ref: '#/components/schemas/RiskScore' }
         rule_flags:
           type: array
+          uniqueItems: true
           items: { $ref: '#/components/schemas/RuleFlag' }
         payload_hash: { $ref: '#/components/schemas/PayloadHash' }
         audit_head_hash: { $ref: '#/components/schemas/PayloadHash' }
