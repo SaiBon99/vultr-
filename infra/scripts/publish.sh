@@ -58,8 +58,9 @@ check() {
   curl -fsS -o /dev/null http://127.0.0.1:8000/health || return 1
   curl -fsS -o /dev/null http://127.0.0.1:8000/ui/ || return 1
   code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/crawl \
-    -H 'content-type: application/json' -d '{"url":"https://example.com"}')"
-  [ "$code" = 401 ]
+    -H 'content-type: application/json' -d '{}')"
+  # No url, so this never crawls: 401 with reviewer auth on, 422 with REVIEWER_AUTH_DISABLED=true.
+  [ "$code" = 401 ] || [ "$code" = 422 ]
 }
 [ -f .releases/last-good.tgz ] || { echo "no last-good release on the VM" >&2; exit 1; }
 rm -rf .incoming/stage && mkdir -p .incoming/stage/last &&
@@ -137,8 +138,9 @@ check() {
   curl -fsS -o /dev/null http://127.0.0.1:8000/ui/ || return 1
   local code
   code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/crawl \
-    -H 'content-type: application/json' -d '{"url":"https://example.com"}')"
-  [ "$code" = 401 ]
+    -H 'content-type: application/json' -d '{}')"
+  # No url, so this never crawls: 401 with reviewer auth on, 422 with REVIEWER_AUTH_DISABLED=true.
+  [ "$code" = 401 ] || [ "$code" = 422 ]
 }
 restart_app() {
   sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend" &&
@@ -171,7 +173,7 @@ fi
 if extract_new && restart_app && check; then
   snapshot > .releases/last-good.tmp && mv .releases/last-good.tmp .releases/last-good.tgz
   rm -rf .incoming
-  echo "deployed: health, /ui/ and crawl auth check passed"
+  echo "deployed: health, /ui/ and crawl route check passed"
   exit 0
 fi
 
