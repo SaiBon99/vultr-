@@ -25,3 +25,4 @@ Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, se
 1. Phase 1 in parallel: infra, backend, frontend per the change tasks.
 2. Archive `refine-verdicts-and-rulebook` once Gate 1 passes.
 3. Apply `embedding-fail-closed` (new `embedding_unavailable` flag, contracts 0.3.0) after that archive.
+4. Apply `add-run-logs` (per-run NDJSON transcripts in Object Storage under `logs/`, contracts 0.2.2, live Vultr Object Storage hookup runbook in its design.md). Independent of Phase 1.
