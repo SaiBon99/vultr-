@@ -4,21 +4,29 @@ export type Tone =
   "danger" | "warning" | "info" | "success" | "neutral" | "outline";
 
 export const verdictTone: Record<Verdict, Tone> = {
-  POLICY_BLOCKED: "danger",
-  TAINTED_UNREVIEWED: "warning",
-  INCONCLUSIVE: "info",
+  ALLOW: "success",
+  NEEDS_REVIEW: "warning",
+  BLOCKED: "danger",
+  FAIL_CLOSED: "danger",
 };
 
 export const verdictLabel: Record<Verdict, string> = {
-  POLICY_BLOCKED: "Policy blocked",
-  TAINTED_UNREVIEWED: "Tainted, unreviewed",
-  INCONCLUSIVE: "Inconclusive",
+  ALLOW: "Allowed",
+  NEEDS_REVIEW: "Needs review",
+  BLOCKED: "Blocked",
+  FAIL_CLOSED: "Fail closed",
 };
 
 export const statusTone: Record<QuarantineStatus, Tone> = {
   quarantined: "neutral",
   purged: "outline",
   overridden: "success",
+};
+
+export const statusLabel: Record<QuarantineStatus, string> = {
+  quarantined: "Awaiting decision",
+  purged: "Purged",
+  overridden: "Overridden",
 };
 
 export const flagLabel = (flag: string): string => flag.replaceAll("_", " ");

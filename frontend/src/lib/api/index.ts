@@ -31,7 +31,7 @@ export function getApi(): ReviewApi {
   instance ??=
     apiMode() === "live"
       ? createLiveApi({
-          baseUrl: env.PUBLIC_API_BASE || "http://localhost:8000",
+          baseUrl: import.meta.env.PUBLIC_API_BASE || "http://localhost:8000",
           getToken: getReviewerToken,
         })
       : createMockApi();
