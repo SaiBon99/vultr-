@@ -140,5 +140,27 @@ for name in ("write_quarantined.json", receipt_name):
     r = load(name)
     check_row(name, r["verdict"], r["risk_score"], r["rule_flags"])
 
+ok &= validate("chat_session.json", "ChatSession")
+ok &= validate("chat_stream.json", "ChatStream")
+stream = load("chat_stream.json")
+kinds = [e["type"] for e in stream]
+if kinds[0] != "run" or kinds[-1] not in ("done", "error") or (kinds[-1] == "done" and kinds[-2] != "reply"):
+    ok = False; print("FAIL chat_stream.json: order must be run, step*, then reply+done or error")
+steps = [e for e in stream if e["type"] == "step"]
+if [s["index"] for s in steps] != list(range(len(steps))):
+    ok = False; print("FAIL chat_stream.json: step indexes must count from 0")
+for s in steps:
+    d = s["detail"]
+    if d is not None and d["kind"] != s["tool"]:
+        ok = False; print(f"FAIL chat step {s['index']}: detail.kind {d['kind']} != tool {s['tool']}")
+    if s["tool"] == "remember" and d:
+        check_row(f"chat step {s['index']}", d["verdict"], d["risk_score"], d["rule_flags"])
+        if d["payload_hash"] != sha(d["content"]) or (d["table"] == "memories") != (d["verdict"] == "ALLOW"):
+            ok = False; print(f"FAIL chat step {s['index']}: payload_hash or table")
+    if s["tool"] == "send_email" and s["status"] != "refused":
+        ok = False; print(f"FAIL chat step {s['index']}: send_email must be refused")
+if stream[-1]["type"] == "done" and stream[-1]["steps"] != len(steps):
+    ok = False; print("FAIL chat_stream.json: done.steps")
+
 print("contracts OK" if ok else "contracts FAILED")
 sys.exit(0 if ok else 1)

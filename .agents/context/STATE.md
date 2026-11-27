@@ -13,7 +13,10 @@ Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, se
 - Run logs live on Vultr (ticket 17, 2026-11-27, `98e8f43` via publish.sh): Object Storage `quarantine-objects` on ams1 (cluster 6, Standard tier, $18/mo; VM is in ams), bucket `quarantine-receipts`, path style, `S3_REGION=ams1`; S3_* in `/opt/vultr-app/.env` (600, runner). setup_object_storage.py passed twice on the live bucket (second run: no changes); only lifecycle rule is `expire-run-logs` on `logs/`, 30 days. /health object_storage ok; a real crawl of example.com (real inference, 2.5 s) wrote `logs/crawl/<run_id>.jsonl`, GET log 200 with sha256 matching the bucket metadata, no secrets in the object.
 - Frontend shell (pre-D5 types): adapter-static at `/ui`, mock adapter, Web Crypto verification; `check:unified` passes.
 
+- Chat agent contract (D10; contracts 0.2.3, change `add-chat-agent`): `/chat/*` paths, Chat* schemas, `chat_stream.json` fixture; check_contracts validates it.
+
 ## Not working or unverified
+- Chat agent backend and `/ui/chat` not built. closed when: tasks 2-4 in [tasks.md](../../openspec/changes/add-chat-agent/tasks.md) are checked and one live message orders from a public page with the injected note quarantined.
 - Tracks still use the old verdict names. closed when: infra, backend and frontend Phase 1 tasks in [tasks.md](../../openspec/changes/refine-verdicts-and-rulebook/tasks.md) are done and each track check passes against fixtures 0.2.0.
 - `infra/sql/001_init.sql` and the running local DB lack D5 columns. closed when: 001_init.sql mirrors contracts/schema.sql and smoke_check passes after re-apply.
 - DB-backed endpoints return 501; session token checked for presence only. closed when: Gate 1 pytest hits local Postgres and a tainted write returns 202.

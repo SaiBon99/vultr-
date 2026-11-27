@@ -8,4 +8,4 @@ What each capability does now, one spec each in `openspec/specs/<capability>/spe
 | Quarantine review | [quarantine-review](../../openspec/specs/quarantine-review/spec.md) | `backend/app/routes/`, `frontend/src/` |
 | Audit and receipts | [audit-receipts](../../openspec/specs/audit-receipts/spec.md) | `backend/app/audit.py`, `backend/app/receipts.py` |
 
-Open change: [refine-verdicts-and-rulebook](../../openspec/changes/refine-verdicts-and-rulebook/proposal.md) (D5; main specs already reflect it).
+Open change: [add-chat-agent](../../openspec/changes/add-chat-agent/proposal.md) (D10). Open change: [refine-verdicts-and-rulebook](../../openspec/changes/refine-verdicts-and-rulebook/proposal.md) (D5; main specs already reflect it).
