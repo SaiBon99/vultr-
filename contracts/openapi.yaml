@@ -1,12 +1,13 @@
 openapi: 3.1.0
 info:
   title: Memory Quarantine Proxy
-  version: 0.2.0
+  version: 0.2.1
   description: |
     FROZEN Phase 0 contract. Owner: Coordinator. Backend implements it; frontend consumes it.
     Change only through an OpenSpec change in openspec/changes/.
     Canonical JSON, hash-chain, receipt-signing rules, Stage 0 and the rulebook: contracts/README.md.
     0.2.0 (D5, openspec/changes/refine-verdicts-and-rulebook): verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED, 13 rule flags, risk_score.
+    0.2.1 (openspec/changes/add-crawl-endpoint): adds POST /crawl. Additive only; no existing shape changes.
 servers:
   - url: http://localhost:8000
     description: Local (FastAPI also serves frontend/build at /ui)
@@ -19,6 +20,8 @@ tags:
   - name: public
   - name: demo
     description: Pattern A Deal Desk runner (honeypot comparison of naive vs quarantined)
+  - name: crawl
+    description: One-page crawler agent, one disposable Docker sandbox per request
 paths:
   /:
     get:
@@ -31,6 +34,59 @@ paths:
           headers:
             Location:
               schema: { type: string, const: /ui/ }
+  /crawl:
+    post:
+      tags: [crawl]
+      operationId: crawlPage
+      summary: Crawler agent - fetch one page and summarise it inside one disposable sandbox.
+      description: |
+        One request starts one Docker container, runs one crawler agent and removes the container before the response.
+        The container runs under the same caps as /demo/run (SANDBOX_MAX_MEMORY_MB, SANDBOX_MAX_CPUS, SANDBOX_TIMEOUT_S),
+        with no network, no credentials, a read-only root filesystem, a non-root user, no capabilities and no mounts.
+        The host brokers the two outside calls over the container's stdin and stdout: the page fetch (public-target
+        guard on every redirect hop, size and type caps, logged on the host) and the model call (Vultr Serverless
+        Inference, CRAWLER_MODEL, at most 512 output tokens; the key never enters the container).
+        At most 2 runs at once; a third concurrent request gets 503 sandbox_busy. One attempt, no retry.
+        The call blocks until the run ends. /crawl never writes memory.
+      security:
+        - ReviewerToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CrawlRequest' }
+      responses:
+        '200':
+          description: Page fetched and summarised
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CrawlResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422':
+          description: Invalid body (code validation_error), or a URL that is not a public http(s) target (code unsafe_target)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: |
+            No partial summary is returned. Codes: fetch_failed (connection, upstream status or redirect cap),
+            page_too_large (over CRAWL_MAX_BYTES), unsupported_content (not HTML or text), inference_failed (model
+            call failed or no completion id), model_output_invalid (reply is not the required JSON shape),
+            sandbox_failed (container did not start, or exited non-zero before speaking the protocol),
+            agent_crash (agent exited without a result line, or sent a malformed or unknown message).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Inference key not configured on this host (code inference_not_configured), or 2 runs already in progress (code sandbox_busy)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: The sandbox hit SANDBOX_TIMEOUT_S (clock starts at container start) and was killed and removed (code timeout)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /demo/run:
     post:
       tags: [demo]
@@ -333,6 +389,63 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
   schemas:
+    CrawlRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          minLength: 8
+          maxLength: 2048
+          description: http or https only. Private, loopback, link-local and credentialed URLs are refused.
+    CrawlLimits:
+      type: object
+      additionalProperties: false
+      required: [memory_mb, cpus, timeout_s]
+      properties:
+        memory_mb: { type: integer, minimum: 1 }
+        cpus: { type: integer, minimum: 1 }
+        timeout_s: { type: integer, minimum: 1 }
+    CrawlSandbox:
+      type: object
+      additionalProperties: false
+      required: [runtime, container_id, image_id, network, limits]
+      properties:
+        runtime: { type: string, const: docker }
+        container_id: { type: string, pattern: '^[0-9a-f]{64}$', description: Full container id from the run; the container is already removed }
+        image_id: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        network: { type: string, const: none }
+        limits: { $ref: '#/components/schemas/CrawlLimits' }
+    CrawlUsage:
+      type: object
+      additionalProperties: false
+      properties:
+        prompt_tokens: { type: integer, minimum: 0 }
+        completion_tokens: { type: integer, minimum: 0 }
+        total_tokens: { type: integer, minimum: 0 }
+    CrawlResult:
+      type: object
+      additionalProperties: false
+      required: [url, final_url, title, summary, key_points, model, inference_id, usage, elapsed_ms, sandbox]
+      properties:
+        url: { type: string, format: uri }
+        final_url: { type: string, format: uri, description: URL after redirects; every hop was SSRF-checked }
+        title: { type: string, maxLength: 300 }
+        summary: { type: string, maxLength: 1000 }
+        key_points:
+          type: array
+          maxItems: 5
+          items: { type: string, maxLength: 300 }
+        model: { type: string }
+        inference_id: { type: string, minLength: 1, description: Completion id returned by Vultr Serverless Inference }
+        usage:
+          anyOf:
+            - { $ref: '#/components/schemas/CrawlUsage' }
+            - { type: 'null' }
+        elapsed_ms: { type: integer, minimum: 0 }
+        sandbox: { $ref: '#/components/schemas/CrawlSandbox' }
     DemoRunRequest:
       type: object
       additionalProperties: false

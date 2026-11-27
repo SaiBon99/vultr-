@@ -13,6 +13,8 @@ A superseding entry adds `- Context changed:`; one whose reason can expire (a pr
 | D4 | Wire rules for hashing and signing | active |
 | D5 | Four verdicts, 13-flag rulebook, risk_score | active |
 | D6 | Chainguard MinIO images locally | active |
+| D7 | Docker sandbox and host broker for /crawl | active |
+| D8 | /crawl runs at most 2 at once; 503 sandbox_busy | active |
 
 ## D1: Frontend stack
 
@@ -47,3 +49,15 @@ Verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED (FAIL_CLOSED first), 13 fl
 Local S3 uses `chainguard/minio` and `chainguard/minio-client`; production uses Vultr Object Storage.
 - Why: official MinIO images could not be pulled (denied / 401) on 2026-11-27.
 - Revisit if: the official images become pullable or Chainguard tags stop being free.
+
+## D7: Docker sandbox and host broker for /crawl
+
+`POST /crawl` runs its agent in one fresh Docker container per request (`--network none`, read-only root, non-root, no capabilities, no env, no mounts, SANDBOX_* caps), not Microsandbox. The host does the page fetch and the model call and answers the agent over stdin and stdout; the inference key never enters the container. Change: openspec/changes/add-crawl-endpoint.
+- Why: Docker is already on the VM and the Execution Plan allows it as the fallback; with no network the host broker is the only way out, so egress control is not needed inside the sandbox. Departs from the plan's Microsandbox-first design for this endpoint only; `/demo/run` is unchanged.
+- Revisit if: `msb doctor` is green on the VX1 and the demo needs Microsandbox's egress control.
+
+## D8: /crawl runs at most 2 at once; 503 sandbox_busy
+
+A third concurrent `/crawl` request gets 503 with code `sandbox_busy` immediately, before any container starts. No queue.
+- Why: each run reserves up to 512 MB and 1 CPU on an 8 GB VM; rejecting keeps both memory and latency bounded.
+- Revisit if: the VM size changes or reviewers routinely hit `sandbox_busy`.

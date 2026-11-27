@@ -230,3 +230,40 @@ class PublicKey(Wire):
     key_id: str
     public_key_b64: str
     jwk: Jwk
+
+
+class CrawlRequest(Wire):
+    url: str = Field(min_length=8, max_length=2048)
+
+
+class CrawlLimits(Wire):
+    memory_mb: int = Field(ge=1)
+    cpus: int = Field(ge=1)
+    timeout_s: int = Field(ge=1)
+
+
+class CrawlSandbox(Wire):
+    runtime: Literal["docker"]
+    container_id: Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
+    image_id: PayloadHash
+    network: Literal["none"]
+    limits: CrawlLimits
+
+
+class CrawlUsage(Wire):
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+
+
+class CrawlResult(Wire):
+    url: str
+    final_url: str
+    title: str = Field(max_length=300)
+    summary: str = Field(max_length=1000)
+    key_points: list[Annotated[str, StringConstraints(max_length=300)]] = Field(max_length=5)
+    model: str
+    inference_id: str = Field(min_length=1)
+    usage: CrawlUsage | None
+    elapsed_ms: int = Field(ge=0)
+    sandbox: CrawlSandbox
