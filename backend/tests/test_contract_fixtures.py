@@ -98,7 +98,7 @@ def test_sign_roundtrip_and_tamper(key_path):
         event="purged",
         quarantine_id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
         session_id="6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
-        verdict="POLICY_BLOCKED",
+        verdict="BLOCKED",
         rule_flags=["imperative_directive"],
         payload_hash=payload_hash("x"),
         audit_head_hash=GENESIS_HASH,
@@ -107,7 +107,7 @@ def test_sign_roundtrip_and_tamper(key_path):
     receipt = signer.sign(unsigned)
     Receipt.model_validate(receipt)
     assert verify_receipt(receipt, signer.public_key)
-    assert not verify_receipt({**receipt, "verdict": "INCONCLUSIVE"}, signer.public_key)
+    assert not verify_receipt({**receipt, "verdict": "FAIL_CLOSED"}, signer.public_key)
 
 
 @pytest.mark.parametrize(
