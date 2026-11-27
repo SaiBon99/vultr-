@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publish HEAD's backend and contracts plus the built frontend to the Vultr VM, then restart quarantine-api.
-# The VM keeps the previous release in /opt/quarantine/.releases/previous.tgz; a failed health or smoke
+# The VM keeps the last release that passed its checks in /opt/quarantine/.releases/last-good.tgz; a failed health or smoke
 # check puts it back automatically, and --rollback puts it back on demand.
 # Runs as the deploy user (see setup_deploy_user.sh). Never reads, prints or copies any .env file or key:
 # the service's secrets stay in /opt/vultr-app/.env on the VM.
@@ -46,21 +46,28 @@ step() { echo "== $*"; }
 if [ "$ROLLBACK" -eq 1 ]; then
   step "rollback on $TARGET"
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "would restore .releases/previous.tgz, restart quarantine-api and run the health and smoke checks"
+    echo "would restore .releases/last-good.tgz, restart quarantine-api and run the health and smoke checks"
     exit 0
   fi
   ssh "${SSH_OPTS[@]}" "$TARGET" bash -s -- rollback <<'REMOTE'
-set -euo pipefail
+set -uo pipefail
 APP=/opt/quarantine
 cd "$APP"
-[ -f .releases/previous.tgz ] || { echo "no previous release on the VM" >&2; exit 1; }
-rm -rf frontend/build
-tar -x --no-same-owner -f .releases/previous.tgz -C "$APP"
-sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend"
-sudo -n /usr/bin/systemctl restart quarantine-api
-for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8000/health && break; sleep 1; done
-curl -fsS -o /dev/null http://127.0.0.1:8000/health
-echo "rolled back to previous release"
+check() {
+  for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8000/health && break; sleep 1; done
+  curl -fsS -o /dev/null http://127.0.0.1:8000/health || return 1
+  curl -fsS -o /dev/null http://127.0.0.1:8000/ui/ || return 1
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/crawl \
+    -H 'content-type: application/json' -d '{"url":"https://example.com"}')"
+  [ "$code" = 401 ]
+}
+[ -f .releases/last-good.tgz ] || { echo "no last-good release on the VM" >&2; exit 1; }
+rm -rf frontend/build &&
+tar -x --no-same-owner --no-same-permissions --touch -f .releases/last-good.tgz -C "$APP" &&
+sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend" &&
+sudo -n /usr/bin/systemctl restart quarantine-api || { echo "rollback failed to restore" >&2; exit 1; }
+check || { echo "rolled back, but checks fail; check journalctl -u quarantine-api" >&2; exit 1; }
+echo "rolled back to last-good release"
 REMOTE
   exit 0
 fi
@@ -92,9 +99,9 @@ if [ "$DRY_RUN" -eq 1 ]; then
   step "dry run: would publish"
   echo "1. archive HEAD: backend contracts infra openspec -> $TARGET:/opt/quarantine/.incoming/code.tgz"
   echo "2. archive $FRONTEND_BUILD -> $TARGET:/opt/quarantine/.incoming/frontend.tgz"
-  echo "3. keep current release as .releases/previous.tgz (excludes backend/.venv)"
+  echo "3. keep last-good.tgz (the release that last passed checks; written only after success)"
   echo "4. extract new release; uv sync --frozen --no-dev; restart quarantine-api"
-  echo "5. health 200, /ui/ 200, POST /crawl without token 401; on failure restore previous and exit 1"
+  echo "5. health 200, /ui/ 200, POST /crawl without token 401; on failure restore last-good and exit 1"
   exit 0
 fi
 
@@ -112,47 +119,58 @@ ssh "${SSH_OPTS[@]}" "$TARGET" 'cat > /opt/quarantine/.incoming/frontend.tgz' < 
 
 step "install, restart, verify"
 ssh "${SSH_OPTS[@]}" "$TARGET" bash -s -- deploy <<'REMOTE'
-set -euo pipefail
+set -uo pipefail
 APP=/opt/quarantine
 cd "$APP"
+mkdir -p .releases
 
+snapshot() {
+  local paths=() p
+  for p in backend contracts infra openspec frontend/build; do [ -e "$p" ] && paths+=("$p"); done
+  tar --exclude='backend/.venv' -czf - "${paths[@]}"
+}
 check() {
   for _ in $(seq 1 30); do curl -fsS -o /dev/null http://127.0.0.1:8000/health && break; sleep 1; done
   curl -fsS -o /dev/null http://127.0.0.1:8000/health || return 1
   curl -fsS -o /dev/null http://127.0.0.1:8000/ui/ || return 1
+  local code
   code="$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8000/crawl \
     -H 'content-type: application/json' -d '{"url":"https://example.com"}')"
   [ "$code" = 401 ]
 }
+restart_app() {
+  sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend" &&
+  sudo -n /usr/bin/systemctl restart quarantine-api
+}
+extract_new() {
+  tar -x --no-same-owner --no-same-permissions --touch -f .incoming/code.tgz -C "$APP" &&
+  rm -rf frontend/build && mkdir -p frontend/build &&
+  tar -x --no-same-owner --no-same-permissions --touch -f .incoming/frontend.tgz -C frontend/build
+}
+restore_last_good() {
+  rm -rf frontend/build &&
+  tar -x --no-same-owner --no-same-permissions --touch -f .releases/last-good.tgz -C "$APP" &&
+  restart_app
+}
 
-mkdir -p .releases
-paths=()
-for p in backend contracts infra openspec frontend/build; do [ -e "$p" ] && paths+=("$p"); done
-tar --exclude='backend/.venv' -czf .releases/previous.tgz.tmp "${paths[@]}"
-mv .releases/previous.tgz.tmp .releases/previous.tgz
+# last-good is the release that last passed its checks. The first deploy records what is live now;
+# later deploys never overwrite it until the new release is verified.
+if [ ! -f .releases/last-good.tgz ]; then
+  snapshot > .releases/last-good.tmp && mv .releases/last-good.tmp .releases/last-good.tgz
+fi
 
-tar -x --no-same-owner -f .incoming/code.tgz -C "$APP"
-rm -rf frontend/build && mkdir -p frontend/build
-tar -x --no-same-owner -f .incoming/frontend.tgz -C frontend/build
-
-sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend"
-sudo -n /usr/bin/systemctl restart quarantine-api
-
-if check; then
+if extract_new && restart_app && check; then
+  snapshot > .releases/last-good.tmp && mv .releases/last-good.tmp .releases/last-good.tgz
   rm -rf .incoming
   echo "deployed: health, /ui/ and crawl auth check passed"
   exit 0
 fi
 
-echo "FAILED: new release did not pass checks; restoring previous release" >&2
-rm -rf frontend/build
-tar -x --no-same-owner -f .releases/previous.tgz -C "$APP"
-sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend"
-sudo -n /usr/bin/systemctl restart quarantine-api
-if check; then
-  echo "previous release restored and healthy" >&2
+echo "FAILED: new release did not pass checks (or did not extract); restoring last-good" >&2
+if restore_last_good && check; then
+  echo "last-good release restored and healthy" >&2
 else
-  echo "previous release also failed its checks; check journalctl -u quarantine-api" >&2
+  echo "last-good release also failed its checks; check journalctl -u quarantine-api" >&2
 fi
 exit 1
 REMOTE
