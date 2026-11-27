@@ -4,15 +4,15 @@ export type Tone =
   "danger" | "warning" | "info" | "success" | "neutral" | "outline";
 
 export const verdictTone: Record<Verdict, Tone> = {
-  POLICY_BLOCKED: "danger",
-  TAINTED_UNREVIEWED: "warning",
-  INCONCLUSIVE: "info",
+  BLOCKED: "danger",
+  NEEDS_REVIEW: "warning",
+  FAIL_CLOSED: "danger",
 };
 
 export const verdictLabel: Record<Verdict, string> = {
-  POLICY_BLOCKED: "Policy blocked",
-  TAINTED_UNREVIEWED: "Tainted, unreviewed",
-  INCONCLUSIVE: "Inconclusive",
+  BLOCKED: "Blocked",
+  NEEDS_REVIEW: "Needs review",
+  FAIL_CLOSED: "Fail closed",
 };
 
 export const statusTone: Record<QuarantineStatus, Tone> = {

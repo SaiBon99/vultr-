@@ -41,7 +41,7 @@ export function createMockApi(): ReviewApi {
         throw new ApiError(409, "Row already decided", "already_decided");
       if (
         body.action === "override" &&
-        item.verdict === "POLICY_BLOCKED" &&
+        (item.verdict === "BLOCKED" || item.verdict === "FAIL_CLOSED") &&
         !body.reason?.trim()
       ) {
         throw new ApiError(
@@ -71,5 +71,23 @@ export function createMockApi(): ReviewApi {
       if (id !== receipt.receipt_id) throw new ApiError(404, "Not found");
       return clone<Receipt>(receipt);
     },
+    crawl: async (body) => ({
+      url: body.url,
+      final_url: body.url,
+      title: "Mock page",
+      summary: "Canned crawl result. Mock mode does not run the sandbox.",
+      key_points: ["Mock data", "No container was started"],
+      model: "mock",
+      inference_id: "mock-inference",
+      usage: null,
+      elapsed_ms: 0,
+      sandbox: {
+        runtime: "docker",
+        container_id: "0".repeat(64),
+        image_id: "sha256:" + "0".repeat(64),
+        network: "none",
+        limits: { memory_mb: 512, cpus: 1, timeout_s: 30 },
+      },
+    }),
   };
 }

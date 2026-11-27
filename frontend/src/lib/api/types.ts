@@ -13,6 +13,8 @@ export type DecideResponse = S["DecideResponse"];
 export type AuditLog = S["AuditLog"];
 export type PublicKey = S["PublicKey"];
 export type Receipt = S["Receipt"];
+export type CrawlRequest = S["CrawlRequest"];
+export type CrawlResult = S["CrawlResult"];
 
 export type ApiMode = "mock" | "live";
 
@@ -24,6 +26,7 @@ export interface ReviewApi {
   getAudit(sessionId?: string): Promise<AuditLog>;
   getPublicKey(): Promise<PublicKey>;
   getReceipt(id: string): Promise<Receipt>;
+  crawl(body: CrawlRequest): Promise<CrawlResult>;
 }
 
 export class ApiError extends Error {

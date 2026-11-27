@@ -13,6 +13,13 @@ test("home page has no axe violations", async ({ page }) => {
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
 
+test("crawl page has no axe violations", async ({ page }) => {
+  await page.goto("/ui/crawl");
+  await page.getByRole("heading", { name: "Crawl a page" }).waitFor(); // SPA: wait for client render
+  const results = await new AxeBuilder({ page }).withTags(WCAG).analyze();
+  expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+});
+
 // A hide rule that loses to a later display rule leaves hidden elements on screen.
 test("no hidden element is rendered", async ({ page }) => {
   await page.goto("/ui");

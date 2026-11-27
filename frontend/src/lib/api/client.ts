@@ -50,5 +50,7 @@ export function createLiveApi({
     getAudit: (sessionId) => request(`/audit${qs({ session_id: sessionId })}`),
     getPublicKey: () => request("/keys/public"),
     getReceipt: (id) => request(`/receipts/${encodeURIComponent(id)}`),
+    crawl: (body) =>
+      request("/crawl", { method: "POST", body: JSON.stringify(body) }),
   };
 }
