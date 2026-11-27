@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     HOST_SECRET: SecretStr = SecretStr("")
     REVIEWER_TOKEN: SecretStr = SecretStr("")
+    # Demo only: true opens every reviewer route (crawl, run logs, review, decide, audit, receipts)
+    # without X-Reviewer-Token. Host and session auth are unaffected.
+    REVIEWER_AUTH_DISABLED: bool = False
 
     DATABASE_URL_PROXY: SecretStr = SecretStr("")
     DATABASE_URL_READER: SecretStr = SecretStr("")
