@@ -415,6 +415,19 @@ export interface components {
       run_id: string;
       /** @description s3://<bucket>/logs/crawl/<run_id>.jsonl, or null when Object Storage is missing or the upload failed */
       log_uri: string | null;
+      /** @description Seed first, then planner-chosen links in visit order. Skipped and failed links are listed with an error code and do not fail the run. */
+      pages: components["schemas"]["CrawlPage"][];
+    };
+    CrawlPage: {
+      /** Format: uri */
+      url: string;
+      /** Format: uri */
+      final_url: string | null;
+      /** @enum {string} */
+      status: "ok" | "skipped" | "failed";
+      title?: string | null;
+      /** @description Error code or reason for a skipped or failed link */
+      error?: string | null;
     };
     ChatSession: {
       /** Format: uuid */

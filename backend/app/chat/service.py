@@ -40,7 +40,6 @@ from app.crawl.service import (
     MODEL_DEADLINE_MARGIN_S,
     PAGE_TEXT_CHARS,
     Slots,
-    _Broker,
     _container_id,
     _crash,
     _ms_since,
@@ -184,12 +183,42 @@ async def _run_events(job: Job, emit: Emit) -> None:
     )
 
 
-class _ChatBroker(_Broker):
-    """Reuses the crawl broker's line framing (_send, _next, _gone); the protocol is its own."""
+class _ChatBroker:
+    """One JSON object per line over the sandbox's stdin and stdout, same framing as /crawl."""
+
+    async def _send(self, message: dict[str, Any]) -> None:
+        self.runlog.sent(message)
+        try:
+            await self.run.send(message)
+        except OSError as exc:  # BrokenPipeError / ConnectionResetError: the agent is gone
+            raise await self._gone() from exc
+
+    async def _gone(self) -> CrawlError:
+        code = await self.run.wait()
+        if code != 0 and not self.run.spoke:
+            return CrawlError(502, "sandbox_failed", f"sandbox exited with code {code}")
+        return _crash("agent exited without a result")
+
+    async def _next(self) -> dict[str, Any]:
+        try:
+            line = await self.run.receive()
+        except ValueError as exc:  # line over LINE_LIMIT
+            raise _crash("agent message is too long") from exc
+        if not line:
+            raise await self._gone()
+        try:
+            message = json.loads(line)
+        except ValueError:
+            message = None
+        if not isinstance(message, dict):
+            self.runlog.received(line, None)
+            raise _crash("agent sent a malformed message")
+        self.runlog.received(line, message)
+        return message
 
     def __init__(
         self, run: ProcessRun, job: Job, runlog: RunLog, deadline: float, emit: Emit
-    ) -> None:  # deliberately not calling super().__init__: there is no crawl target here
+    ) -> None:
         self.run = run
         self.runlog = runlog
         self.job = job

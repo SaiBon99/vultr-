@@ -17,6 +17,9 @@ class Settings(BaseSettings):
 
     HOST_SECRET: SecretStr = SecretStr("")
     REVIEWER_TOKEN: SecretStr = SecretStr("")
+    # Demo only: true opens every reviewer route (crawl, run logs, review, decide, audit, receipts)
+    # without X-Reviewer-Token. Host and session auth are unaffected.
+    REVIEWER_AUTH_DISABLED: bool = False
 
     DATABASE_URL_PROXY: SecretStr = SecretStr("")
     DATABASE_URL_READER: SecretStr = SecretStr("")
@@ -39,6 +42,18 @@ class Settings(BaseSettings):
     SANDBOX_MAX_MEMORY_MB: int = 512
     SANDBOX_MAX_CPUS: int = 1
     SANDBOX_TIMEOUT_S: int = 30
+    # Multi-page crawl: the seed plus up to CRAWL_MAX_PAGES - 1 linked pages, one run deadline.
+    CRAWL_MAX_PAGES: int = 3
+    CRAWL_MAX_LINKS: int = 20
+    CRAWL_TIMEOUT_S: int = 30
+    # Comma-separated origins the crawler must never fetch, e.g. this host's own API:
+    # "http://203.0.113.10:8000". Empty means no extra denials.
+    CRAWL_DENY_ORIGINS: str = ""
+    # "hardened" (production) or "naive" (demo baseline). "naive" only takes effect when
+    # DEMO_ALLOW_NAIVE is also true; it removes the untrusted-data instructions from the prompts.
+    CRAWL_PROMPT_MODE: str = "hardened"
+    # Demo canary secrets, comma-separated. A summary that echoes one is blocked (canary_overlap).
+    CANARY_TOKENS: str = ""
 
     CHAT_MODEL: str = ""  # empty: use CRAWLER_MODEL
     CHAT_TIMEOUT_S: int = Field(default=90, ge=1)
@@ -51,6 +66,10 @@ class Settings(BaseSettings):
     @property
     def chat_model(self) -> str:
         return self.CHAT_MODEL.strip() or self.CRAWLER_MODEL
+
+    @property
+    def canary_tokens(self) -> frozenset[str]:
+        return frozenset(t.strip() for t in self.CANARY_TOKENS.split(",") if t.strip())
 
     @property
     def log_secrets(self) -> list[str]:

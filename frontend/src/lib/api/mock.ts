@@ -591,6 +591,15 @@ export function createMockApi({
         },
         run_id: runId,
         log_uri: `s3://mock-receipts/logs/crawl/${runId}.jsonl`,
+        pages: [
+          {
+            url: body.url,
+            final_url: body.url,
+            status: "ok",
+            title: "Example Domain",
+            error: null,
+          },
+        ],
       };
     },
     getCrawlRunLog: async (runId) => {

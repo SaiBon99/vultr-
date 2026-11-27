@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from app import gate
@@ -73,19 +74,65 @@ async def mark_tainted(
         )
 
 
+def judge_failure_update(
+    verdict: str, score: int, flags: list[str]
+) -> tuple[str, int, list[str]]:
+    """Judge timeout or bad JSON (contracts/README.md): add judge_failed; NEEDS_REVIEW escalates
+    to FAIL_CLOSED with score >= 85; BLOCKED and FAIL_CLOSED keep verdict and score."""
+    flags = flags if "judge_failed" in flags else [*flags, "judge_failed"]
+    if verdict == "NEEDS_REVIEW":
+        return "FAIL_CLOSED", max(score, 85), flags
+    return verdict, score, flags
+
+
+async def record_judgement(conn: AsyncConnection, quarantine_id: UUID, result: Any) -> str:
+    """Store the judge's note on a frozen row. The judge explains; it never lowers a verdict.
+    Only rows still pending are touched, so a late judge cannot overwrite a decision."""
+    async with conn.transaction():
+        if result.status == "done" and result.note is not None:
+            await conn.execute(
+                "UPDATE quarantine_queue SET judge_status = 'done', judge_note = %s"
+                " WHERE id = %s AND judge_status = 'pending'",
+                (Jsonb(result.note.model_dump()), quarantine_id),
+            )
+            return "done"
+        cur = await conn.execute(
+            "SELECT verdict, risk_score, rule_flags FROM quarantine_queue"
+            " WHERE id = %s AND judge_status = 'pending' FOR UPDATE",
+            (quarantine_id,),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return "skipped"
+        verdict, score, flags = judge_failure_update(row[0], row[1], list(row[2]))
+        await conn.execute(
+            "UPDATE quarantine_queue SET judge_status = 'failed', verdict = %s, risk_score = %s,"
+            " rule_flags = %s WHERE id = %s",
+            (verdict, score, Jsonb(flags), quarantine_id),
+        )
+        return "failed"
+
+
 def notes_from_crawl(result: Any) -> list[str]:
-    """What a crawl remembers. Change only this to save key points or model-chosen notes later."""
-    return [result.summary]
+    """What a crawl remembers: one note with the summary and key points, so the gate sees both.
+    One write per run keeps the burst rule quiet."""
+    return ["\n".join([result.summary, *result.key_points])]
 
 
 async def save_crawl(
-    conn: AsyncConnection, result: Any, allowlist: frozenset[str]
+    conn: AsyncConnection,
+    result: Any,
+    allowlist: frozenset[str],
+    canaries: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
-    """One new session per crawl, tainted by the page it read; each note goes through the gate."""
+    """One new session per crawl, tainted by every page it read; the note goes through the gate."""
     session_id, _token = await create_session(conn)
-    await mark_tainted(conn, session_id, result.final_url, "web")
+    for page in result.pages:
+        if page.status == "ok" and page.final_url:
+            await mark_tainted(conn, session_id, page.final_url, "web")
     return [
-        await write_memory(conn, session_id, note, allowlist) for note in notes_from_crawl(result)
+        await write_memory(conn, session_id, note, allowlist, canaries)
+        for note in notes_from_crawl(result)
     ]
 
 
@@ -159,4 +206,26 @@ async def write_memory(
         "risk_score": score,
         "rule_flags": list(result.rule_flags),
         "payload_hash": digest,
+        "content": content,
     }
+
+
+# Reviewer read for GET /quarantine. Runs on quarantine_proxy: memory_reader has no grant on this table.
+LIST_QUARANTINE_SQL = """
+SELECT q.id, q.session_id, q.status, q.content, q.payload_hash, q.source, q.source_ref,
+       q.verdict, q.risk_score, q.rule_flags, q.judge_status, q.judge_note,
+       q.override_reason, q.decided_by, q.decided_at, q.receipt_uri, q.created_at,
+       s.gate_mode, s.tainted, s.external_sources, s.write_count,
+       s.created_at AS session_created_at
+  FROM quarantine_queue q
+  JOIN sessions s ON s.id = q.session_id
+ WHERE %(status)s::text IS NULL OR q.status = %(status)s
+ ORDER BY q.created_at DESC
+"""
+
+
+async def list_quarantine(conn: AsyncConnection, status: str | None) -> list[dict[str, Any]]:
+    """Every queue row (optionally one status) joined to its session, newest first."""
+    async with conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(LIST_QUARANTINE_SQL, {"status": status})
+        return await cur.fetchall()

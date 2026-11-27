@@ -16,7 +16,7 @@ from typing import Any
 
 from app.config import Settings
 from app.crawl.errors import CrawlError
-from app.crawl.model import USAGE_KEYS, complete
+from app.crawl.model import complete_payload
 
 MAX_OUTPUT_TOKENS = 1024
 MAX_REPLY_CHARS = 4000
@@ -74,15 +74,8 @@ async def next_turn(
         "max_tokens": MAX_OUTPUT_TOKENS,
         "messages": messages,
     }
-    data, _inference_id, content = await complete(settings, payload, timeout_s)
-    raw_usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
-    usage = {k: v for k in USAGE_KEYS if isinstance(v := raw_usage.get(k), int) and v >= 0}
-    reported = data.get("model")
-    return ModelTurn(
-        turn=parse_turn(content),
-        model=reported if isinstance(reported, str) and reported else model,
-        usage=usage or None,
-    )
+    comp = await complete_payload(settings, payload, timeout_s)
+    return ModelTurn(turn=parse_turn(comp.content), model=comp.model, usage=comp.usage)
 
 
 def parse_turn(content: Any) -> Turn:

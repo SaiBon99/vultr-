@@ -80,6 +80,19 @@ def test_reviewer_token_401(client):
         assert r.status_code == 401, path
 
 
+def test_reviewer_auth_disabled_opens_reviewer_routes_only(settings):
+    from fastapi.testclient import TestClient
+
+    from app.main import create_app
+
+    open_settings = settings.model_copy(update={"REVIEWER_AUTH_DISABLED": True})
+    with TestClient(create_app(open_settings)) as c:
+        for method, path in [("get", "/quarantine"), ("get", "/audit")]:
+            assert getattr(c, method)(path).status_code != 401, path
+        assert c.post("/proxy/sessions").status_code == 401  # host auth still enforced
+        assert c.get("/proxy/memory/active").status_code == 401  # session auth still enforced
+
+
 def test_spoofed_source_or_session_id_rejected_422(client):
     for extra in ({"source": "user"}, {"session_id": UUID_}):
         r = client.post("/proxy/memory/write", headers=SESSION, json={"content": "hi", **extra})

@@ -24,7 +24,12 @@ from typing import Any
 
 # python -I does not put the script directory on sys.path; the extractor lives next door.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from crawl_agent import extract_text  # noqa: E402
+from crawl_agent import extract  # noqa: E402
+
+
+def extract_text(body: str, content_type: str) -> tuple[str, str]:
+    title, text, _links = extract(body, content_type)
+    return title, text
 
 MAX_TURNS = 64  # hard stop; the host enforces the real step cap
 
