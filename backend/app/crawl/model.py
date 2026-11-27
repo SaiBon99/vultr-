@@ -24,9 +24,12 @@ from openai import AsyncOpenAI
 from app.config import Settings
 from app.crawl.errors import CrawlError
 
-PLAN_MAX_TOKENS = 128
-READ_MAX_TOKENS = 384
-SUMMARY_MAX_TOKENS = 512
+# The model reasons before it answers, and reasoning counts against max_tokens. At 384 a page
+# carrying a hidden directive used the whole budget on reasoning and returned no text (live
+# check, 2026-11-27), so every role gets room for both.
+PLAN_MAX_TOKENS = 1024
+READ_MAX_TOKENS = 1024
+SUMMARY_MAX_TOKENS = 1024
 MAX_SENTENCES = 3
 MAX_FACTS = 5
 UNTRUSTED = (
@@ -279,6 +282,8 @@ def _loads(content: Any) -> Any:
     if not isinstance(content, str):
         raise _invalid("model reply is not text")
     cleaned = content.strip()
+    if not cleaned:
+        raise _invalid("model reply is empty (reasoning may have used the output budget)")
     fenced = _FENCE.match(cleaned)
     if fenced:
         cleaned = fenced.group(1)
