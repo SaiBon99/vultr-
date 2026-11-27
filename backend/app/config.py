@@ -3,7 +3,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,9 +55,17 @@ class Settings(BaseSettings):
     # Demo canary secrets, comma-separated. A summary that echoes one is blocked (canary_overlap).
     CANARY_TOKENS: str = ""
 
+    CHAT_MODEL: str = ""  # empty: use CRAWLER_MODEL
+    CHAT_TIMEOUT_S: int = Field(default=90, ge=1)
+    CHAT_MAX_STEPS: int = Field(default=8, ge=1)
+
     DEMO_ALLOW_NAIVE: bool = False
     EGRESS_ALLOWLIST: str = ""
     RECEIPT_SIGNING_KEY_PATH: str = ""
+
+    @property
+    def chat_model(self) -> str:
+        return self.CHAT_MODEL.strip() or self.CRAWLER_MODEL
 
     @property
     def canary_tokens(self) -> frozenset[str]:

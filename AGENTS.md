@@ -22,7 +22,7 @@ node .agents/skills/close-session/record_check.mjs       # record budgets and li
 ```
 
 ## Invariants
-1. The sandbox holds no DB, S3 or LLM credentials and has no direct egress to Postgres (5432), Object Storage (9000) or the internet; it runs capped at 512 MB, 1 CPU and 30 s and is destroyed after each run. Everything goes through `/proxy/*`. `session_id` and `source` are derived server-side from `X-Session-Token`; request bodies never carry them.
+1. The sandbox holds no DB, S3 or LLM credentials and has no direct egress to Postgres (5432), Object Storage (9000) or the internet; it runs capped at 512 MB, 1 CPU and 30 s (90 s a chat message, D10) and is destroyed after each run. Everything goes through `/proxy/*`. `session_id` and `source` are derived server-side from `X-Session-Token`; request bodies never carry them.
 2. Recall reads `memories` only, through the `memory_reader` role. Quarantined rows never reach an agent.
 3. Code decides the verdict (`ALLOW`, `NEEDS_REVIEW`, `BLOCKED`, `FAIL_CLOSED`) and the `risk_score`; `backend/app/gate.py` stays pure. The judge only explains or raises review priority; judge failure escalates `NEEDS_REVIEW` to `FAIL_CLOSED` and never downgrades.
 4. `audit_events` is append-only. Hashing, canonical JSON and receipt signing follow [contracts/README.md](contracts/README.md) exactly.

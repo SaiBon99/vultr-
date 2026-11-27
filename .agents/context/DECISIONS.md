@@ -16,6 +16,7 @@ A superseding entry adds `- Context changed:`; one whose reason can expire (a pr
 | D7 | Docker sandbox and host broker for /crawl | active |
 | D8 | /crawl runs at most 2 at once; 503 sandbox_busy | active |
 | D9 | Run logs share the receipts bucket under logs/ | active |
+| D10 | Chat agent: 90 s, 8 tools a message; checkout simulated | active |
 
 ## D1: Frontend stack
 
@@ -68,3 +69,9 @@ A third concurrent `/crawl` request gets 503 with code `sandbox_busy` immediatel
 Each /crawl run writes one redacted NDJSON transcript to `S3_BUCKET` at `logs/crawl/<run_id>.jsonl` (sessions reserved at `logs/sessions/<session_id>/`), next to `receipts/`. Change: openspec/changes/add-run-logs; wire rule 6.
 - Why: one Object Storage subscription and one credential pair; the optional expiry rule (`setup_object_storage.py --logs-expire-days`) filters on `logs/` only, so receipts never expire.
 - Revisit if: logs need a different retention, access policy or region from receipts, or Vultr rejects prefix-scoped lifecycle rules.
+
+## D10: Chat agent: 90 s, 8 tools a message; checkout simulated
+
+`/chat` replaces the Crawl tab: one Docker sandbox per message (D7 isolation, D8 cap shared), host-brokered tools, SSE steps. A message runs at most `CHAT_TIMEOUT_S` (90) and `CHAT_MAX_STEPS` (8); memory and CPU caps stay at the SANDBOX_* values. `place_order` is always simulated and `send_email` always refused. Change: openspec/changes/add-chat-agent.
+- Why: a multi-step tool loop needs several model calls, which do not fit 30 s; simulated checkout lets the agent browse any public URL with no purchase risk.
+- Revisit if: median message time stays under 30 s, or the demo needs a real checkout.

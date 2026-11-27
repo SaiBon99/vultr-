@@ -102,6 +102,13 @@ async def complete(
             {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
         ],
     }
+    return await complete_payload(settings, payload, timeout_s)
+
+
+async def complete_payload(
+    settings: Settings, payload: dict[str, Any], timeout_s: float
+) -> Completion:
+    """One chat-completions call with a caller-built payload (crawl roles, chat turns)."""
     timeout = max(timeout_s, 0.1)
     try:
         # One attempt (max_retries=0); trust_env=False ignores host proxy variables.
@@ -136,7 +143,7 @@ async def complete(
     model = data.get("model")
     return Completion(
         content=content,
-        model=model if isinstance(model, str) and model else settings.CRAWLER_MODEL,
+        model=model if isinstance(model, str) and model else str(payload["model"]),
         inference_id=inference_id,
         usage=usage or None,
     )

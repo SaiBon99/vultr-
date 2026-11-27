@@ -1,4 +1,9 @@
-import type { QuarantineStatus, RunLogLine, Verdict } from "#lib/api/index.js";
+import type {
+  ChatTool,
+  QuarantineStatus,
+  RunLogLine,
+  Verdict,
+} from "#lib/api/index.js";
 
 export type Tone =
   "danger" | "warning" | "info" | "success" | "neutral" | "outline";
@@ -27,6 +32,14 @@ export const statusLabel: Record<QuarantineStatus, string> = {
   quarantined: "Awaiting decision",
   purged: "Purged",
   overridden: "Overridden",
+};
+
+export const toolLabel: Record<ChatTool, string> = {
+  browse: "Browse",
+  remember: "Remember",
+  recall: "Recall",
+  place_order: "Place order",
+  send_email: "Send email",
 };
 
 export const flagLabel = (flag: string): string => flag.replaceAll("_", " ");

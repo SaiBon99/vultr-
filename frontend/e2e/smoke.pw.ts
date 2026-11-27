@@ -111,3 +111,43 @@ test("failed crawl shows run_id from the error body and its run log", async ({
     "fetch_failed",
   );
 });
+
+test("chat: the starter prompt streams a blocked write, contained email and simulated order", async ({
+  page,
+}) => {
+  await page.goto("/ui");
+  const nav = page.getByRole("navigation", { name: "Primary" });
+  await expect(nav.getByRole("link", { name: "Chat" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Crawl" })).toHaveCount(0);
+  await nav.getByRole("link", { name: "Chat" }).click();
+
+  await expect(
+    page.getByRole("heading", { name: "Shopping agent" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: /Order 2 reams of A4/ }).click();
+  await expect(page.getByLabel("Task for the agent")).toBeFocused();
+
+  const steps = page.getByTestId("chat-step");
+  const remember = steps.filter({ hasText: "Quarantined as BLOCKED" });
+  await expect(remember).toBeVisible({ timeout: 15_000 });
+  await expect(remember.getByText("Blocked", { exact: true })).toBeVisible();
+  await expect(remember).toContainText("Risk 100");
+  await expect(page.locator("[data-tool=send_email]")).toContainText(
+    "Egress contained",
+    { timeout: 15_000 },
+  );
+  await expect(page.locator("[data-tool=place_order]")).toContainText(
+    "Simulated",
+    { timeout: 15_000 },
+  );
+  await expect(page.getByTestId("chat-done")).toContainText("network none", {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("chat-reply")).toContainText("SIM-7Q2K9");
+  await expect(page.getByLabel("Task for the agent")).toBeFocused();
+
+  await remember.getByRole("link", { name: "Open in review" }).click();
+  await expect(page.getByTestId("inspector")).toContainText(
+    "card details to billing@paper-deals.example",
+  );
+});

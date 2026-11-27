@@ -1,4 +1,10 @@
-import { ApiError, type ReviewApi, type RunLogLine } from "./types";
+import { readSse } from "./sse";
+import {
+  ApiError,
+  type ChatEvent,
+  type ReviewApi,
+  type RunLogLine,
+} from "./types";
 
 export interface ClientOptions {
   baseUrl: string;
@@ -28,13 +34,13 @@ export function createLiveApi({
     const res = await f(`${root}${path}`, { ...init, headers });
     if (!res.ok) {
       const err = (await res.json().catch(() => null)) as {
-        detail?: string;
+        detail?: unknown;
         code?: string;
         run_id?: string;
       } | null;
       throw new ApiError(
         res.status,
-        err?.detail ?? res.statusText,
+        typeof err?.detail === "string" ? err.detail : res.statusText,
         err?.code,
         err?.run_id,
       );
@@ -53,6 +59,21 @@ export function createLiveApi({
     return s ? `?${s}` : "";
   };
 
+  async function* streamChat(
+    chatId: string,
+    message: string,
+    signal?: AbortSignal,
+  ): AsyncGenerator<ChatEvent> {
+    const res = await send(
+      `/chat/${encodeURIComponent(chatId)}/messages`,
+      { method: "POST", body: JSON.stringify({ message }), signal },
+      "text/event-stream",
+    );
+    if (!res.body)
+      throw new ApiError(res.status, "The chat stream had no body");
+    for await (const data of readSse(res.body)) yield parseChatEvent(data);
+  }
+
   return {
     getHealth: () => request("/health"),
     listQuarantine: (status) => request(`/quarantine${qs({ status })}`),
@@ -69,6 +90,17 @@ export function createLiveApi({
     getCrawlRunLog: async (runId) => {
       const res = await send(
         `/crawl/runs/${encodeURIComponent(runId)}/log`,
+        {},
+        "application/x-ndjson",
+      );
+      return parseRunLog(await res.text());
+    },
+    createChat: () => request("/chat/sessions", { method: "POST" }),
+    sendChatMessage: (chatId, message, options) =>
+      streamChat(chatId, message, options?.signal),
+    getChatRunLog: async (runId) => {
+      const res = await send(
+        `/chat/runs/${encodeURIComponent(runId)}/log`,
         {},
         "application/x-ndjson",
       );
@@ -123,4 +155,22 @@ export function parseRunLog(text: string): RunLogLine[] {
     lines.push(value);
   });
   return lines;
+}
+
+const CHAT_EVENT_TYPES = new Set(["run", "step", "reply", "error", "done"]);
+
+/**
+ * Parse one SSE data payload into a ChatEvent. Throws on non-JSON or an unknown type.
+ * shortcut: checks the discriminant only; the host validates events against the contract.
+ */
+export function parseChatEvent(data: string): ChatEvent {
+  let value: unknown;
+  try {
+    value = JSON.parse(data);
+  } catch {
+    throw new Error("A chat stream event is not valid JSON");
+  }
+  if (!isRecord(value) || !CHAT_EVENT_TYPES.has(value.type as string))
+    throw new Error("A chat stream event has an unknown type");
+  return value as unknown as ChatEvent;
 }

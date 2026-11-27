@@ -14,7 +14,10 @@ Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, se
 - Live VM (2026-11-27): DB connected (`DATABASE_URL_PROXY`/`_READER`), a real crawl files its summary in `quarantine_queue`; `REVIEWER_AUTH_DISABLED=true` in prod, so reviewer routes are open.
 - Frontend shell (pre-D5 types): adapter-static at `/ui`, mock adapter, Web Crypto verification; `check:unified` passes.
 
+- Chat agent contract (D10; contracts 0.2.3, change `add-chat-agent`): `/chat/*` paths, Chat* schemas, `chat_stream.json` fixture; check_contracts validates it.
+
 ## Not working or unverified
+- Chat agent backend and `/ui/chat` not built. closed when: tasks 2-4 in [tasks.md](../../openspec/changes/add-chat-agent/tasks.md) are checked and one live message orders from a public page with the injected note quarantined.
 - Tracks still use the old verdict names. closed when: infra, backend and frontend Phase 1 tasks in [tasks.md](../../openspec/changes/refine-verdicts-and-rulebook/tasks.md) are done and each track check passes against fixtures 0.2.0.
 - `infra/sql/001_init.sql` and the running local DB lack D5 columns. closed when: 001_init.sql mirrors contracts/schema.sql and smoke_check passes after re-apply.
 - DB-backed endpoints return 501; session token checked for presence only. closed when: Gate 1 pytest hits local Postgres and a tainted write returns 202.

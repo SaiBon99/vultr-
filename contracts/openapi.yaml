@@ -9,6 +9,7 @@ info:
     0.2.0 (D5, openspec/changes/refine-verdicts-and-rulebook): verdicts ALLOW / NEEDS_REVIEW / BLOCKED / FAIL_CLOSED, 13 rule flags, risk_score.
     0.2.1 (openspec/changes/add-crawl-endpoint): adds POST /crawl. Additive only; no existing shape changes.
     0.2.2 (openspec/changes/add-run-logs): adds CrawlResult.run_id and log_uri, optional Error.run_id, and GET /crawl/runs/{run_id}/log. Additive only.
+    0.2.3 (openspec/changes/add-chat-agent, D10): adds /chat/sessions, /chat/{chat_id}/messages (SSE) and /chat/runs/{run_id}/log. Additive only.
 servers:
   - url: http://localhost:8000
     description: Local (FastAPI also serves frontend/build at /ui)
@@ -23,6 +24,8 @@ tags:
     description: Pattern A Deal Desk runner (honeypot comparison of naive vs quarantined)
   - name: crawl
     description: One-page crawler agent, one disposable Docker sandbox per request
+  - name: chat
+    description: Shopping chat agent, one disposable Docker sandbox per message, steps streamed as SSE
 paths:
   /:
     get:
@@ -118,6 +121,112 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '503':
           description: Object Storage is not configured on this host (code storage_missing), or it did not answer (code storage_unavailable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /chat/sessions:
+    post:
+      tags: [chat]
+      operationId: createChat
+      summary: Start a chat with the shopping agent. Creates one quarantined memory session for the whole chat.
+      description: |
+        The chat owns one sessions row (gate_mode quarantined). Taint is sticky across messages: once any message
+        browses a page, every later remember in this chat is gated as tainted. Chat history lives on the host only.
+      security:
+        - ReviewerToken: []
+      responses:
+        '201':
+          description: Chat created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ChatSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503':
+          description: The database is not configured on this host (code database_missing)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /chat/{chat_id}/messages:
+    post:
+      tags: [chat]
+      operationId: sendChatMessage
+      summary: Send one user message; the agent runs in one disposable sandbox and its steps stream back as Server-Sent Events.
+      description: |
+        One message starts one Docker container (same isolation as /crawl: no network, no credentials, read-only root,
+        non-root, no capabilities, no mounts; SANDBOX_MAX_MEMORY_MB and SANDBOX_MAX_CPUS) capped at CHAT_TIMEOUT_S (D10).
+        The agent reaches the outside only through host-brokered tools:
+        browse (public-target guard on every hop, marks the chat session tainted), remember (deterministic gate; ALLOW
+        goes to memories, anything else to quarantine_queue), recall (memories only, never quarantine), place_order
+        (always simulated; nothing is bought) and send_email (always refused; recorded as contained egress).
+        At most CHAT_MAX_STEPS tool calls per message. Shares the 2-run sandbox limit with /crawl (D8).
+        Stream: data lines are ChatEvent JSON. Order: one run event, zero or more step events, then either a reply
+        event followed by done, or one error event. The stream always ends after done or error.
+        Refusals before the sandbox starts are plain JSON errors, not streams.
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: chat_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatMessageRequest' }
+      responses:
+        '200':
+          description: Event stream of ChatEvent objects, one per SSE data line
+          content:
+            text/event-stream:
+              schema: { $ref: '#/components/schemas/ChatEvent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: Unknown chat_id (code chat_not_found)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: This chat already has a message running (code chat_busy)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Invalid body (code validation_error)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Inference not configured (inference_not_configured), database missing (database_missing), or 2 sandbox runs already in progress (sandbox_busy)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /chat/runs/{run_id}/log:
+    get:
+      tags: [chat]
+      operationId: getChatRunLog
+      summary: The stored transcript of one chat message run (contracts/README.md wire rule 6).
+      security:
+        - ReviewerToken: []
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: NDJSON, one JSON object per line; run_start first, run_end last
+          content:
+            application/x-ndjson:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: No transcript for this run_id (code not_found)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Object Storage is not configured (storage_missing) or did not answer (storage_unavailable)
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -498,6 +607,160 @@ components:
         status: { type: string, enum: [ok, skipped, failed] }
         title: { type: [string, 'null'], maxLength: 300 }
         error: { type: [string, 'null'], description: Error code or reason for a skipped or failed link }
+    ChatSession:
+      type: object
+      additionalProperties: false
+      required: [chat_id, session_id, created_at]
+      properties:
+        chat_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid, description: The memory session this chat writes through; quarantine items group under it }
+        created_at: { type: string, format: date-time }
+    ChatMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: { type: string, minLength: 1, maxLength: 2000 }
+    ChatTool:
+      type: string
+      enum: [browse, remember, recall, place_order, send_email]
+    ChatStepStatus:
+      type: string
+      enum: [ok, refused, error]
+      description: refused means the host declined the action on policy (send_email always; unsafe browse target); error means it failed
+    ChatBrowseDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, url, final_url, title, bytes, session_tainted]
+      properties:
+        kind: { type: string, const: browse }
+        url: { type: string, maxLength: 2048 }
+        final_url: { type: [string, 'null'], maxLength: 2048 }
+        title: { type: [string, 'null'], maxLength: 300 }
+        bytes: { type: [integer, 'null'], minimum: 0 }
+        session_tainted: { type: boolean, description: Session taint after this step; true once any page was read }
+    ChatRememberDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, content, verdict, risk_score, rule_flags, table, id, payload_hash]
+      properties:
+        kind: { type: string, const: remember }
+        content: { type: string, maxLength: 2000 }
+        verdict: { $ref: '#/components/schemas/Verdict' }
+        risk_score: { $ref: '#/components/schemas/RiskScore' }
+        rule_flags:
+          type: array
+          items: { $ref: '#/components/schemas/RuleFlag' }
+        table: { type: string, enum: [memories, quarantine_queue] }
+        id: { type: string, format: uuid, description: memories.id when ALLOW, else quarantine_queue.id (open it in the Review UI) }
+        payload_hash: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    ChatRecallDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, items]
+      properties:
+        kind: { type: string, const: recall }
+        items:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, content]
+            properties:
+              id: { type: string, format: uuid }
+              content: { type: string, maxLength: 2000 }
+    ChatOrderDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, item, quantity, url, order_id, simulated]
+      properties:
+        kind: { type: string, const: place_order }
+        item: { type: string, maxLength: 200 }
+        quantity: { type: integer, minimum: 1, maximum: 100 }
+        url: { type: [string, 'null'], maxLength: 2048 }
+        order_id: { type: [string, 'null'], description: SIM- prefixed id; null when refused or failed }
+        simulated: { type: boolean, const: true, description: Nothing is ever bought }
+    ChatEmailDetail:
+      type: object
+      additionalProperties: false
+      required: [kind, to, subject, sent]
+      properties:
+        kind: { type: string, const: send_email }
+        to: { type: string, maxLength: 320 }
+        subject: { type: string, maxLength: 200 }
+        sent: { type: boolean, const: false, description: The host never sends email; the attempt is contained egress }
+    ChatRunEvent:
+      type: object
+      additionalProperties: false
+      required: [type, run_id, chat_id, limits]
+      properties:
+        type: { type: string, const: run }
+        run_id: { type: string, format: uuid }
+        chat_id: { type: string, format: uuid }
+        limits: { $ref: '#/components/schemas/CrawlLimits' }
+    ChatStepEvent:
+      type: object
+      additionalProperties: false
+      required: [type, index, tool, status, summary, error_code, detail]
+      properties:
+        type: { type: string, const: step }
+        index: { type: integer, minimum: 0 }
+        tool: { $ref: '#/components/schemas/ChatTool' }
+        status: { $ref: '#/components/schemas/ChatStepStatus' }
+        summary: { type: string, maxLength: 300, description: One human-readable line written by the host, never by the model }
+        error_code: { type: [string, 'null'], description: Set when status is refused or error, e.g. unsafe_target, fetch_failed, memory_unavailable, egress_refused }
+        detail:
+          anyOf:
+            - { $ref: '#/components/schemas/ChatBrowseDetail' }
+            - { $ref: '#/components/schemas/ChatRememberDetail' }
+            - { $ref: '#/components/schemas/ChatRecallDetail' }
+            - { $ref: '#/components/schemas/ChatOrderDetail' }
+            - { $ref: '#/components/schemas/ChatEmailDetail' }
+            - { type: 'null' }
+    ChatReplyEvent:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { type: string, const: reply }
+        text: { type: string, minLength: 1, maxLength: 4000 }
+    ChatErrorEvent:
+      type: object
+      additionalProperties: false
+      required: [type, code, detail, run_id]
+      properties:
+        type: { type: string, const: error }
+        code: { type: string, description: 'timeout, inference_failed, model_output_invalid, sandbox_failed, agent_crash, step_limit' }
+        detail: { type: string }
+        run_id: { type: string, format: uuid }
+    ChatDoneEvent:
+      type: object
+      additionalProperties: false
+      required: [type, run_id, elapsed_ms, steps, model, usage, sandbox, log_uri]
+      properties:
+        type: { type: string, const: done }
+        run_id: { type: string, format: uuid }
+        elapsed_ms: { type: integer, minimum: 0 }
+        steps: { type: integer, minimum: 0 }
+        model: { type: string }
+        usage:
+          anyOf:
+            - { $ref: '#/components/schemas/CrawlUsage' }
+            - { type: 'null' }
+        sandbox: { $ref: '#/components/schemas/CrawlSandbox' }
+        log_uri: { type: [string, 'null'], description: 's3://<bucket>/logs/chat/<run_id>.jsonl, or null' }
+    ChatEvent:
+      oneOf:
+        - { $ref: '#/components/schemas/ChatRunEvent' }
+        - { $ref: '#/components/schemas/ChatStepEvent' }
+        - { $ref: '#/components/schemas/ChatReplyEvent' }
+        - { $ref: '#/components/schemas/ChatErrorEvent' }
+        - { $ref: '#/components/schemas/ChatDoneEvent' }
+    ChatStream:
+      type: array
+      description: Fixture shape only; a recorded stream, one ChatEvent per SSE data line
+      items: { $ref: '#/components/schemas/ChatEvent' }
     DemoRunRequest:
       type: object
       additionalProperties: false
@@ -570,7 +833,7 @@ components:
         run_id:
           type: string
           format: uuid
-          description: Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log
+          description: Set on /crawl 502 and 504; the transcript is at GET /crawl/runs/{run_id}/log. Chat errors carry run_id in ChatErrorEvent instead
     HealthCheck:
       type: string
       enum: [ok, error, skipped]
