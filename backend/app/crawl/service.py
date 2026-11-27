@@ -1,39 +1,44 @@
-"""The broker: runs one agent in one sandbox and answers its two requests, fetch and model.
+"""The broker: orchestrates one crawl across one sandbox and several host-side model roles.
 
-Protocol (one JSON object per line):
-  host  -> agent  {"type": "task", "url": str}
-  agent -> host   {"type": "fetch", "url": <the task url>}
-  host  -> agent  {"type": "fetch_result", "final_url", "content_type", "body"}
-  agent -> host   {"type": "model", "page_title": str, "page_text": str}
-  host  -> agent  {"type": "model_result", "title", "summary", "key_points"}
-  agent -> host   {"type": "result", "title", "summary", "key_points"}  (must equal model_result)
-Each request is allowed once and in this order. Anything else ends the run with 502 agent_crash.
-The host never sends the inference key, and failures are never reported back to the agent: the
-run is killed and the error returned to the caller.
+Roles: the sandboxed parser (no network, no credentials, parses the bytes it is handed); the
+planner (model, picks which offered links to visit); the reader (model, one call per page); the
+synthesiser (model, writes the reviewer summary). The host does every fetch and every model call.
+
+Protocol with the sandbox (one JSON object per line):
+  host  -> agent  {"type": "parse", "url": str, "content_type": str, "body": str}
+  agent -> host   {"type": "parsed", "page_title": str, "page_text": str, "links": [{"href", "text"}]}
+  host  -> agent  {"type": "end"}
+Any other message ends the run with 502 agent_crash. The host never sends the inference key, and
+the sandbox never sees a URL it did not get from the host.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import time
+from dataclasses import dataclass
 from typing import Any
+from urllib.robotparser import RobotFileParser
+from urllib.parse import urljoin, urlsplit, urlunsplit
 from uuid import uuid4
 
 from app.config import Settings
+from app.crawl import model as llm
 from app.crawl.errors import CrawlError
-from app.crawl.fetch import Page, fetch_page
+from app.crawl.fetch import ROBOTS_UA, Page, fetch_page, load_robots
 from app.crawl.guard import PublicTargetGuard, Target, UnsafeTarget
-from app.crawl.model import Summary, summarise
-from app.crawl.runner import ProcessRun, Runner
-from app.models import CrawlLimits, CrawlResult, CrawlSandbox, CrawlUsage
+from app.crawl.runner import Limits, ProcessRun, Runner
+from app.models import CrawlLimits, CrawlPage, CrawlResult, CrawlSandbox, CrawlUsage
 from app.runlog import RunLog, upload_run_log
 from app.storage import ObjectStore
 
 MAX_CONCURRENT_RUNS = 2  # D8
 PAGE_TEXT_CHARS = 20_000
 MODEL_DEADLINE_MARGIN_S = 0.5
+MAX_LINKS_FROM_AGENT = 200
 
 
 class Slots:
@@ -53,6 +58,30 @@ class Slots:
         self.free += 1
 
 
+def _origin(url: str) -> tuple[str, str, int]:
+    """scheme, host, port with defaults filled in. ValueError on an unparseable port."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    port = parts.port or (443 if scheme == "https" else 80)
+    return scheme, (parts.hostname or "").lower(), port
+
+
+def _clean(url: str) -> str:
+    """Canonical form for dedupe: lower-case scheme and host, no fragment."""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path or "/", parts.query, ""))
+
+
+def _denied_origins(settings: Settings) -> frozenset[tuple[str, str, int]]:
+    """Origins the crawler must never fetch (this host's own API, for example)."""
+    out = set()
+    for entry in settings.CRAWL_DENY_ORIGINS.split(","):
+        if entry.strip():
+            with contextlib.suppress(ValueError):
+                out.add(_origin(entry.strip()))
+    return frozenset(out)
+
+
 async def crawl(
     url: str,
     *,
@@ -66,33 +95,43 @@ async def crawl(
         raise CrawlError(
             503, "inference_not_configured", "Inference is not configured on this host"
         )
+    denied = _denied_origins(settings)
     try:
         target = await guard.check(url)
+        if _origin(target.url) in denied:
+            raise UnsafeTarget("origin is not allowed")
     except UnsafeTarget as exc:
         raise CrawlError(422, "unsafe_target", str(exc)) from exc
 
+    limits = Limits(
+        memory_mb=runner.limits.memory_mb,
+        cpus=runner.limits.cpus,
+        timeout_s=settings.CRAWL_TIMEOUT_S,
+    )
     slots.take()
     # From here on every run gets a run_id and a transcript, whatever the outcome.
     run_id = str(uuid4())
-    runlog = RunLog(run_id, "crawl", None, runner.limits)
+    runlog = RunLog(run_id, "crawl", None, limits)
     run: ProcessRun | None = None
-    broker: _Broker | None = None
+    crawl_state: _Crawl | None = None
+    summary: llm.Summary | None = None
     container_id: str | None = None
+    image_id: str | None = None
     http_status, error_code = 500, None  # anything not caught below is an internal error
     started = time.monotonic()
     try:
         try:
-            async with asyncio.timeout(runner.limits.timeout_s):
-                run = await runner.start()  # the clock covers container start, fetch and model
+            async with asyncio.timeout(limits.timeout_s):
+                run = await runner.start()  # the clock covers start, every fetch and model call
                 runlog.start(run.image_id)
-                broker = _Broker(
-                    run, target, settings, guard, started + runner.limits.timeout_s, runlog
+                crawl_state = _Crawl(
+                    run, target, settings, guard, started + limits.timeout_s, runlog, denied
                 )
-                await broker.serve()
+                summary = await crawl_state.execute()
                 container_id, image_id = await run.sandbox_ids()
         except TimeoutError as exc:
             raise CrawlError(
-                504, "timeout", f"sandbox hit the {runner.limits.timeout_s} s limit and was killed"
+                504, "timeout", f"crawl hit the {limits.timeout_s} s limit and was killed"
             ) from exc
         http_status = 200
     except CrawlError as exc:
@@ -122,29 +161,29 @@ async def crawl(
         )
         log_uri = await upload_run_log(store, runlog, settings.log_secrets)
 
-    assert broker is not None and container_id is not None
-    assert broker.page is not None and broker.summary is not None and broker.result is not None
-    title, summary, key_points = broker.result
-    s = broker.summary
+    assert crawl_state is not None and crawl_state.seed_page is not None
+    assert summary is not None and container_id is not None and image_id is not None
+    usage = crawl_state.usage
     return CrawlResult(
         url=url,
-        final_url=broker.page.final_url,
-        title=title,
-        summary=summary,
-        key_points=key_points,
-        model=s.model,
-        inference_id=s.inference_id,
-        usage=CrawlUsage(**s.usage) if s.usage else None,
+        final_url=crawl_state.seed_page.final_url,
+        title=summary.title,
+        summary=summary.summary,
+        key_points=summary.key_points,
+        model=summary.model,
+        inference_id=summary.inference_id,
+        usage=CrawlUsage(**usage) if usage else None,
         elapsed_ms=elapsed_ms,
         sandbox=CrawlSandbox(
             runtime="docker",
             container_id=container_id,
             image_id=image_id,
             network="none",
-            limits=CrawlLimits(**dataclasses.asdict(runner.limits)),
+            limits=CrawlLimits(**dataclasses.asdict(limits)),
         ),
         run_id=run_id,
         log_uri=log_uri,
+        pages=crawl_state.pages,
     )
 
 
@@ -155,7 +194,16 @@ async def _container_id(run: ProcessRun) -> str | None:
         return None
 
 
-class _Broker:
+@dataclass(frozen=True)
+class _Parsed:
+    title: str
+    text: str
+    links: list[dict[str, str]]
+
+
+class _Crawl:
+    """One run: seed page, then the planner's picks (same origin, budgeted), then the summary."""
+
     def __init__(
         self,
         run: ProcessRun,
@@ -164,39 +212,215 @@ class _Broker:
         guard: PublicTargetGuard,
         deadline: float,
         runlog: RunLog,
+        denied: frozenset[tuple[str, str, int]],
     ) -> None:
         self.run = run
-        self.runlog = runlog
         self.target = target
         self.settings = settings
         self.guard = guard
         self.deadline = deadline
-        self.page: Page | None = None
-        self.summary: Summary | None = None
-        self.result: tuple[str, str, list[str]] | None = None
+        self.runlog = runlog
+        self.denied = denied
+        self.seed_origin = _origin(target.url)
+        self.naive = settings.CRAWL_PROMPT_MODE == "naive" and settings.DEMO_ALLOW_NAIVE
+        self.seed_page: Page | None = None
+        self.pages: list[CrawlPage] = []
+        self.notes: list[dict[str, Any]] = []
+        self.visited: set[str] = set()
+        self.robots: dict[str, RobotFileParser] = {}
+        self.usage: dict[str, int] | None = None
 
-    async def serve(self) -> None:
-        await self._send({"type": "task", "url": self.target.url})
-        while self.result is None:
-            message = await self._next()
-            kind = message.get("type")
-            if kind == "fetch" and self.page is None and message.get("url") == self.target.url:
-                await self._fetch()
-            elif kind == "model" and self.page is not None and self.summary is None:
-                await self._model(message)
-            elif kind == "result" and self.summary is not None:
-                self.result = self._check_result(message)
-            else:
-                raise _crash("agent sent an unexpected message")
+    async def execute(self) -> llm.Summary:
+        if self.naive:
+            self.runlog.host("prompt", mode="naive")
+        seed_page = await self._fetch(self.target)  # a failed seed fails the run
+        self.seed_page = seed_page
+        self.visited.add(_clean(seed_page.final_url))
+        seed = await self._parse(seed_page)
+        self.pages.append(
+            CrawlPage(
+                url=self.target.url,
+                final_url=seed_page.final_url,
+                status="ok",
+                title=seed.title or None,
+            )
+        )
+        await self._read(seed_page.final_url, seed)
 
-    def _check_result(self, message: dict[str, Any]) -> tuple[str, str, list[str]]:
-        """The agent may only hand back the summary the host validated, unchanged."""
-        assert self.summary is not None
-        expected = (self.summary.title, self.summary.summary, self.summary.key_points)
-        got = (message.get("title"), message.get("summary"), message.get("key_points"))
-        if got != expected:
-            raise _crash("agent result differs from the validated summary")
-        return expected
+        budget = self.settings.CRAWL_MAX_PAGES - 1
+        candidates = self._candidates(seed.links, seed_page.final_url)
+        if candidates and budget > 0:
+            picks = await self._plan(seed_page.final_url, seed, candidates, budget)
+            for index in picks:
+                await self._visit(candidates[index]["url"])
+
+        summary = await self._synthesise()
+        await self._finish()
+        return summary
+
+    def _candidates(self, links: list[dict[str, str]], base: str) -> list[dict[str, str]]:
+        """Links the planner may choose from: http(s), no credentials, same origin, not denied."""
+        seen = set(self.visited)
+        out: list[dict[str, str]] = []
+        for link in links:
+            try:
+                absolute = urljoin(base, link["href"])
+                parts = urlsplit(absolute)
+                origin = _origin(absolute)
+            except ValueError:
+                continue
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                continue
+            if parts.username is not None or parts.password is not None:
+                continue
+            if origin != self.seed_origin or origin in self.denied:
+                continue
+            clean = _clean(absolute)
+            if clean in seen:
+                continue
+            seen.add(clean)
+            out.append({"url": clean, "text": link["text"]})
+            if len(out) == self.settings.CRAWL_MAX_LINKS:
+                break
+        return out
+
+    async def _plan(
+        self, url: str, parsed: _Parsed, candidates: list[dict[str, str]], budget: int
+    ) -> list[int]:
+        called = time.monotonic()
+        picks, comp = await llm.plan_links(
+            self.settings,
+            url=url,
+            page_title=parsed.title,
+            page_text=parsed.text,
+            candidates=candidates,
+            limit=budget,
+            timeout_s=self._model_timeout(),
+            naive=self.naive,
+        )
+        self._account("plan", comp, called)
+        return picks
+
+    async def _visit(self, url: str) -> None:
+        """One linked page. Its failures are recorded and the run goes on; agent errors do not."""
+        try:
+            target = await self.guard.check(url)
+        except UnsafeTarget as exc:
+            self.pages.append(CrawlPage(url=url, final_url=None, status="skipped", error=str(exc)))
+            return
+        robots = await self._robots(target)
+        if not robots.can_fetch(ROBOTS_UA, url):
+            self.pages.append(
+                CrawlPage(url=url, final_url=None, status="skipped", error="robots_disallowed")
+            )
+            return
+        try:
+            page = await self._fetch(target)
+        except CrawlError as exc:
+            self.pages.append(CrawlPage(url=url, final_url=None, status="failed", error=exc.code))
+            return
+        key = _clean(page.final_url)
+        if key in self.visited:
+            self.pages.append(CrawlPage(url=url, final_url=page.final_url, status="skipped", error="duplicate"))
+            return
+        self.visited.add(key)
+        parsed = await self._parse(page)
+        self.pages.append(
+            CrawlPage(url=url, final_url=page.final_url, status="ok", title=parsed.title or None)
+        )
+        await self._read(page.final_url, parsed)
+
+    async def _read(self, url: str, parsed: _Parsed) -> None:
+        called = time.monotonic()
+        note, comp = await llm.read_page(
+            self.settings,
+            url=url,
+            page_title=parsed.title,
+            page_text=parsed.text,
+            timeout_s=self._model_timeout(),
+            naive=self.naive,
+        )
+        self._account("read", comp, called)
+        self.notes.append({"url": url, "title": note.title, "facts": note.facts})
+
+    async def _synthesise(self) -> llm.Summary:
+        called = time.monotonic()
+        summary, comp = await llm.synthesise(
+            self.settings, notes=self.notes, timeout_s=self._model_timeout(), naive=self.naive
+        )
+        self._account("synthesise", comp, called)
+        return summary
+
+    def _account(self, role: str, comp: llm.Completion, called: float) -> None:
+        """Never the prompt or the reply: only what identifies and prices the call."""
+        self.usage = llm.add_usage(self.usage, comp.usage)
+        self.runlog.host(
+            "model",
+            role=role,
+            model=comp.model,
+            inference_id=comp.inference_id,
+            usage=comp.usage,
+            latency_ms=_ms_since(called),
+        )
+
+    def _model_timeout(self) -> float:
+        # Ends just before the run deadline, so a slow model is inference_failed, not 504.
+        return self.deadline - time.monotonic() - MODEL_DEADLINE_MARGIN_S
+
+    async def _robots(self, target: Target) -> RobotFileParser:
+        parts = urlsplit(target.url)
+        origin = f"{parts.scheme}://{parts.netloc}"
+        if origin not in self.robots:
+            self.robots[origin] = await load_robots(origin, self.guard, self.settings.CRAWL_MAX_BYTES)
+        return self.robots[origin]
+
+    async def _fetch(self, target: Target) -> Page:
+        try:
+            page = await fetch_page(target, self.guard, self.settings.CRAWL_MAX_BYTES)
+        except CrawlError as exc:
+            self.runlog.host("fetch", url=target.url, error_code=exc.code)
+            raise
+        self.runlog.host(
+            "fetch",
+            final_url=page.final_url,
+            status=page.status,
+            bytes=page.size,
+            content_type=page.content_type,
+        )
+        return page
+
+    async def _parse(self, page: Page) -> _Parsed:
+        await self._send(
+            {
+                "type": "parse",
+                "url": page.final_url,
+                "content_type": page.content_type,
+                "body": page.text,
+            }
+        )
+        message = await self._next()
+        title, text, links = message.get("page_title"), message.get("page_text"), message.get("links")
+        if (
+            message.get("type") != "parsed"
+            or not isinstance(title, str)
+            or not isinstance(text, str)
+            or not isinstance(links, list)
+        ):
+            raise _crash("agent parse reply is malformed")
+        clean: list[dict[str, str]] = []
+        for link in links[:MAX_LINKS_FROM_AGENT]:
+            if not isinstance(link, dict) or not isinstance(link.get("href"), str):
+                raise _crash("agent parse reply is malformed")
+            if not isinstance(link.get("text"), str):
+                raise _crash("agent parse reply is malformed")
+            clean.append({"href": link["href"], "text": link["text"]})
+        return _Parsed(title=title[:300], text=text[:PAGE_TEXT_CHARS], links=clean)
+
+    async def _finish(self) -> None:
+        message = {"type": "end"}
+        self.runlog.sent(message)
+        with contextlib.suppress(OSError):  # the agent may already have exited; cleanup handles it
+            await self.run.send(message)
 
     async def _send(self, message: dict[str, Any]) -> None:
         self.runlog.sent(message)
@@ -227,67 +451,6 @@ class _Broker:
             raise _crash("agent sent a malformed message")
         self.runlog.received(line, message)
         return message
-
-    async def _fetch(self) -> None:
-        try:
-            self.page = await fetch_page(self.target, self.guard, self.settings.CRAWL_MAX_BYTES)
-        except CrawlError as exc:
-            self.runlog.host("fetch", url=self.target.url, error_code=exc.code)
-            raise
-        self.runlog.host(
-            "fetch",
-            final_url=self.page.final_url,
-            status=self.page.status,
-            bytes=self.page.size,
-            content_type=self.page.content_type,
-        )
-        await self._send(
-            {
-                "type": "fetch_result",
-                "final_url": self.page.final_url,
-                "content_type": self.page.content_type,
-                "body": self.page.text,
-            }
-        )
-
-    async def _model(self, message: dict[str, Any]) -> None:
-        title, text = message.get("page_title"), message.get("page_text")
-        if not isinstance(title, str) or not isinstance(text, str):
-            raise _crash("agent model request is malformed")
-        assert self.page is not None
-        called = time.monotonic()
-        try:
-            self.summary = await self._summarise(title, text)
-        except CrawlError as exc:
-            self.runlog.host("model", error_code=exc.code, latency_ms=_ms_since(called))
-            raise
-        # Never the prompt or the request: only what identifies and prices the call.
-        self.runlog.host(
-            "model",
-            model=self.summary.model,
-            inference_id=self.summary.inference_id,
-            usage=self.summary.usage,
-            latency_ms=_ms_since(called),
-        )
-        await self._send(
-            {
-                "type": "model_result",
-                "title": self.summary.title,
-                "summary": self.summary.summary,
-                "key_points": self.summary.key_points,
-            }
-        )
-
-    async def _summarise(self, title: str, text: str) -> Summary:
-        assert self.page is not None
-        return await summarise(
-            self.settings,
-            url=self.page.final_url,
-            page_title=title[:300],
-            page_text=text[:PAGE_TEXT_CHARS],
-            # Ends just before the run deadline, so a slow model is inference_failed, not 504.
-            timeout_s=self.deadline - time.monotonic() - MODEL_DEADLINE_MARGIN_S,
-        )
 
 
 def _ms_since(t: float) -> int:

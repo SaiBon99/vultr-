@@ -54,7 +54,9 @@ async def _save_to_memory(state, result: CrawlResult) -> None:
     allowlist = gate.normalize_allowlist(state.settings.egress_allowlist)
     try:
         async with state.db.proxy.connection() as conn:
-            saved = await memory_store.save_crawl(conn, result, allowlist)
+            saved = await memory_store.save_crawl(
+                conn, result, allowlist, state.settings.canary_tokens
+            )
     except Exception:
         log.exception("crawl memory save failed url=%s", result.final_url[:300])
         return

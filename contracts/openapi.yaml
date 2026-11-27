@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Memory Quarantine Proxy
-  version: 0.2.2
+  version: 0.2.3
   description: |
     FROZEN Phase 0 contract. Owner: Coordinator. Backend implements it; frontend consumes it.
     Change only through an OpenSpec change in openspec/changes/.
@@ -462,7 +462,7 @@ components:
     CrawlResult:
       type: object
       additionalProperties: false
-      required: [url, final_url, title, summary, key_points, model, inference_id, usage, elapsed_ms, sandbox, run_id, log_uri]
+      required: [url, final_url, title, summary, key_points, model, inference_id, usage, elapsed_ms, sandbox, run_id, log_uri, pages]
       properties:
         url: { type: string, format: uri }
         final_url: { type: string, format: uri, description: URL after redirects; every hop was SSRF-checked }
@@ -484,6 +484,20 @@ components:
         log_uri:
           type: [string, 'null']
           description: s3://<bucket>/logs/crawl/<run_id>.jsonl, or null when Object Storage is missing or the upload failed
+        pages:
+          type: array
+          description: Seed first, then planner-chosen links in visit order. Skipped and failed links are listed with an error code and do not fail the run.
+          items: { $ref: '#/components/schemas/CrawlPage' }
+    CrawlPage:
+      type: object
+      additionalProperties: false
+      required: [url, final_url, status]
+      properties:
+        url: { type: string, format: uri }
+        final_url: { type: [string, 'null'], format: uri }
+        status: { type: string, enum: [ok, skipped, failed] }
+        title: { type: [string, 'null'], maxLength: 300 }
+        error: { type: [string, 'null'], description: Error code or reason for a skipped or failed link }
     DemoRunRequest:
       type: object
       additionalProperties: false

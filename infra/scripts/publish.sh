@@ -77,7 +77,7 @@ fi
 
 step "preconditions"
 # Only the paths that make up the release matter; unrelated edits elsewhere in the repo are fine.
-RELEASE_PATHS=(backend contracts infra openspec frontend)
+RELEASE_PATHS=(backend contracts infra openspec frontend honeypot)
 if [ "$ALLOW_DIRTY" -eq 0 ] && [ -n "$(git -C "$REPO_ROOT" status --porcelain -- "${RELEASE_PATHS[@]}")" ]; then
   echo "release paths have uncommitted changes; commit them or pass --allow-dirty (the build will not match HEAD)" >&2
   exit 1
@@ -112,7 +112,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
 step "package"
-git -C "$REPO_ROOT" archive --format=tar HEAD backend contracts infra openspec | gzip -9 > "$TMP/code.tgz"
+git -C "$REPO_ROOT" archive --format=tar HEAD backend contracts infra openspec honeypot | gzip -9 > "$TMP/code.tgz"
 tar -C "$FRONTEND_BUILD" -czf "$TMP/frontend.tgz" .
 echo "code.tgz $(du -h "$TMP/code.tgz" | cut -f1), frontend.tgz $(du -h "$TMP/frontend.tgz" | cut -f1)"
 
