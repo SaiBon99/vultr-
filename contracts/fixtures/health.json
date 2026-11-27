@@ -1,0 +1,8 @@
+{
+  "status": "ok",
+  "checks": {
+    "db": "ok",
+    "object_storage": "ok",
+    "inference": "ok"
+  }
+}

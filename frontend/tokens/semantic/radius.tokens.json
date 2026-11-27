@@ -1,0 +1,26 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "radius": {
+    "$type": "dimension",
+    "sm": {
+      "$value": "{primitive.radius.sm}",
+      "$description": "Small elements: badges, checkboxes"
+    },
+    "md": {
+      "$value": "{primitive.radius.md}",
+      "$description": "Controls: buttons, inputs"
+    },
+    "lg": {
+      "$value": "{primitive.radius.lg}",
+      "$description": "Containers: cards, popovers"
+    },
+    "xl": {
+      "$value": "{primitive.radius.xl}",
+      "$description": "Large surfaces: dialogs, sheets"
+    },
+    "full": {
+      "$value": "{primitive.radius.full}",
+      "$description": "Pills and avatars"
+    }
+  }
+}

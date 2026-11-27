@@ -1,0 +1,204 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "session_created",
+      "target_id": null,
+      "payload": {
+        "gate_mode": "quarantined",
+        "label": "Session 1 - research"
+      },
+      "created_at": "2026-11-27T10:00:00.000000Z",
+      "prev_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "event_hash": "sha256:ef08dc316ca153548142cf044f38a28ee2eaab3990c8d1bf6647f337dc04b5f8"
+    },
+    {
+      "seq": 2,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "external_read",
+      "target_id": null,
+      "payload": {
+        "source_ref": "email:msg-acme-renewal-0042",
+        "source_kind": "email"
+      },
+      "created_at": "2026-11-27T10:01:00.000000Z",
+      "prev_hash": "sha256:ef08dc316ca153548142cf044f38a28ee2eaab3990c8d1bf6647f337dc04b5f8",
+      "event_hash": "sha256:ef209ef27f2b1e412cec1ab7f868d75523b4743e819c8694cf04e925fcebad77"
+    },
+    {
+      "seq": 3,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "memory_quarantined",
+      "target_id": "11111111-1111-4111-8111-111111111111",
+      "payload": {
+        "verdict": "POLICY_BLOCKED",
+        "rule_flags": [
+          "tainted_session",
+          "imperative_directive",
+          "external_email"
+        ],
+        "payload_hash": "sha256:e9ad4de80d8dd616e0fb23b84805b4e862e633b06849d3c12480fede39784a6c"
+      },
+      "created_at": "2026-11-27T10:02:00.000000Z",
+      "prev_hash": "sha256:ef209ef27f2b1e412cec1ab7f868d75523b4743e819c8694cf04e925fcebad77",
+      "event_hash": "sha256:56ecd98f29de84adc655e2dc8ed484fdfaa75ae4a2cf3c55034eaa9b1acf2a68"
+    },
+    {
+      "seq": 4,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "judge_completed",
+      "target_id": "11111111-1111-4111-8111-111111111111",
+      "payload": {
+        "risk_level": "critical",
+        "recommended_action": "purge"
+      },
+      "created_at": "2026-11-27T10:02:30.000000Z",
+      "prev_hash": "sha256:56ecd98f29de84adc655e2dc8ed484fdfaa75ae4a2cf3c55034eaa9b1acf2a68",
+      "event_hash": "sha256:f89edd59051777d49f87e3b6f5475c39736287855661e94d16dde48c11524962"
+    },
+    {
+      "seq": 5,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "memory_quarantined",
+      "target_id": "22222222-2222-4222-8222-222222222222",
+      "payload": {
+        "verdict": "CLEAN_USER",
+        "rule_flags": [
+          "tainted_session"
+        ],
+        "payload_hash": "sha256:6365e43eaefebaae5c308e6f21859c04335657546376dd35fe44256313774f5b"
+      },
+      "created_at": "2026-11-27T10:03:00.000000Z",
+      "prev_hash": "sha256:f89edd59051777d49f87e3b6f5475c39736287855661e94d16dde48c11524962",
+      "event_hash": "sha256:973348a9f1552f765fbfd95b5ea43e0b907664d65ae7eaa42fee3bd710cddaad"
+    },
+    {
+      "seq": 6,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "judge_completed",
+      "target_id": "22222222-2222-4222-8222-222222222222",
+      "payload": {
+        "risk_level": "low",
+        "recommended_action": "override"
+      },
+      "created_at": "2026-11-27T10:03:30.000000Z",
+      "prev_hash": "sha256:973348a9f1552f765fbfd95b5ea43e0b907664d65ae7eaa42fee3bd710cddaad",
+      "event_hash": "sha256:c118089fb3f3255182c716a4cf6bb3b37d2c5f295848339653859405eb1a1b3b"
+    },
+    {
+      "seq": 7,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "memory_quarantined",
+      "target_id": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+        "verdict": "POLICY_BLOCKED",
+        "rule_flags": [
+          "tainted_session",
+          "imperative_directive",
+          "sensitive_tool"
+        ],
+        "payload_hash": "sha256:f15db80a761d6b80d23b0105480de463233d1f93047348d594af92b1d5ba8a3d"
+      },
+      "created_at": "2026-11-27T10:04:00.000000Z",
+      "prev_hash": "sha256:c118089fb3f3255182c716a4cf6bb3b37d2c5f295848339653859405eb1a1b3b",
+      "event_hash": "sha256:c8dc2d72b2d7fc527bea18a8e1c562fed3ef85908839a7ab38cfbaf147c115e6"
+    },
+    {
+      "seq": 8,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "judge_completed",
+      "target_id": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+        "risk_level": "critical",
+        "recommended_action": "purge"
+      },
+      "created_at": "2026-11-27T10:04:30.000000Z",
+      "prev_hash": "sha256:c8dc2d72b2d7fc527bea18a8e1c562fed3ef85908839a7ab38cfbaf147c115e6",
+      "event_hash": "sha256:47b5f8ddfe6caefac51e8fc638154433b4bd33f203ca15f01ca67a87325efa64"
+    },
+    {
+      "seq": 9,
+      "session_id": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "event_type": "session_created",
+      "target_id": null,
+      "payload": {
+        "gate_mode": "quarantined",
+        "label": "Session 2 - quoting"
+      },
+      "created_at": "2026-11-27T10:05:00.000000Z",
+      "prev_hash": "sha256:47b5f8ddfe6caefac51e8fc638154433b4bd33f203ca15f01ca67a87325efa64",
+      "event_hash": "sha256:781f8d3d02308968944ec7909983871680decf6f66412942e898140dc19320dd"
+    },
+    {
+      "seq": 10,
+      "session_id": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "event_type": "memory_promoted",
+      "target_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      "payload": {
+        "verdict": "CLEAN_USER",
+        "payload_hash": "sha256:717b671243e0f4ddb302317f9af6ef552524f130c5e1e6d167ea7b67ea15de3c"
+      },
+      "created_at": "2026-11-27T10:05:30.000000Z",
+      "prev_hash": "sha256:781f8d3d02308968944ec7909983871680decf6f66412942e898140dc19320dd",
+      "event_hash": "sha256:7daff42411328982ee07b6ca60590e2174f195b1c673a1b8a9e07f1d7e8f69e1"
+    },
+    {
+      "seq": 11,
+      "session_id": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "event_type": "memory_quarantined",
+      "target_id": "44444444-4444-4444-8444-444444444444",
+      "payload": {
+        "verdict": "INCONCLUSIVE",
+        "rule_flags": [
+          "judge_failed"
+        ],
+        "payload_hash": "sha256:c9905ad996ede8cb1d4467597b5d8b126abeb7910706280fbd33f923b08e23d6"
+      },
+      "created_at": "2026-11-27T10:06:00.000000Z",
+      "prev_hash": "sha256:7daff42411328982ee07b6ca60590e2174f195b1c673a1b8a9e07f1d7e8f69e1",
+      "event_hash": "sha256:05e595f12a778d2c3c81d6b666772a03c8f8ccbd532300d7fcaea3d876888305"
+    },
+    {
+      "seq": 12,
+      "session_id": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "event_type": "judge_failed",
+      "target_id": "44444444-4444-4444-8444-444444444444",
+      "payload": {
+        "error": "timeout"
+      },
+      "created_at": "2026-11-27T10:06:30.000000Z",
+      "prev_hash": "sha256:05e595f12a778d2c3c81d6b666772a03c8f8ccbd532300d7fcaea3d876888305",
+      "event_hash": "sha256:87d970d0eb12d565385b0f5cb4e811ca1007a3aa45e1ed20eae6b6f95dd8208e"
+    },
+    {
+      "seq": 13,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "decision_purged",
+      "target_id": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+        "decided_by": "reviewer",
+        "payload_hash": "sha256:f15db80a761d6b80d23b0105480de463233d1f93047348d594af92b1d5ba8a3d"
+      },
+      "created_at": "2026-11-27T10:08:00.000000Z",
+      "prev_hash": "sha256:87d970d0eb12d565385b0f5cb4e811ca1007a3aa45e1ed20eae6b6f95dd8208e",
+      "event_hash": "sha256:51b07eb6aee89f438705e7f0949365593a0f406451a2ebcafcaba75f937a0a0e"
+    },
+    {
+      "seq": 14,
+      "session_id": "6f1d2c3b-0a4e-4b5f-8c7d-1e2f3a4b5c6d",
+      "event_type": "receipt_signed",
+      "target_id": "33333333-3333-4333-8333-333333333333",
+      "payload": {
+        "receipt_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3",
+        "receipt_uri": "s3://quarantine-receipts/receipts/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3.json"
+      },
+      "created_at": "2026-11-27T10:08:01.000000Z",
+      "prev_hash": "sha256:51b07eb6aee89f438705e7f0949365593a0f406451a2ebcafcaba75f937a0a0e",
+      "event_hash": "sha256:5cdc1315402283dd5028087891b55f3a5a474731056435f2c4572b62a8fbd299"
+    }
+  ],
+  "chain_valid": false,
+  "head_hash": "sha256:5cdc1315402283dd5028087891b55f3a5a474731056435f2c4572b62a8fbd299",
+  "first_invalid_seq": 5
+}

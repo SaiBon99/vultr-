@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+/* class-based dark mode, matching the .dark block in tokens.css */
+@custom-variant dark (&:is(.dark, .dark *));
+
+@theme {
+  @tz (theme: "light");
+}

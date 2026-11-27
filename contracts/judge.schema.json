@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memory-quarantine.local/contracts/judge.schema.json",
+  "title": "Isolated judge output (FROZEN Phase 0 contract)",
+  "description": "Strict JSON from qwen3.8-27b. Parse error, extra keys, invalid enum or timeout: judge_status=failed, verdict=INCONCLUSIVE (fail closed). The judge explains; it never sets the verdict otherwise.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "risk_level",
+    "recommended_action",
+    "indicators"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "risk_level": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
+    },
+    "recommended_action": {
+      "enum": [
+        "purge",
+        "override"
+      ]
+    },
+    "indicators": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "string",
+        "maxLength": 120
+      }
+    }
+  }
+}

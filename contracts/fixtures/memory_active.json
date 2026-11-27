@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+      "session_id": "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
+      "content": "Prefer annual billing for Acme Corp.",
+      "source": "user",
+      "source_ref": null,
+      "payload_hash": "sha256:717b671243e0f4ddb302317f9af6ef552524f130c5e1e6d167ea7b67ea15de3c",
+      "created_at": "2026-11-27T10:05:30.000000Z",
+      "distance": null
+    }
+  ]
+}

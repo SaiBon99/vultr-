@@ -1,0 +1,33 @@
+{
+  "$schema": "https://someshks.com/spring/schema.json",
+  "v": 1,
+  "name": "Acme",
+  "primary": {
+    "hue": 154,
+    "chroma": 0.179
+  },
+  "neutralTint": 0.22,
+  "type": {
+    "body": "Geist",
+    "heading": "Geist",
+    "mono": "Geist Mono",
+    "base": 16,
+    "ratio": 1.2,
+    "headingWeight": 600,
+    "fluid": true
+  },
+  "density": 0.5,
+  "roundness": 0.5,
+  "motion": 0.4,
+  "stack": {
+    "building": "app",
+    "ownership": "own",
+    "styling": "tailwind"
+  },
+  "neutralHue": 75,
+  "curve": {
+    "bezier": [0.42, 0, 1, 1],
+    "hueShift": 0,
+    "darkChroma": 0.78
+  }
+}

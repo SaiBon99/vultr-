@@ -221,3 +221,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Memory Quarantine
+node_modules/
+.env
+.env.*
+!.env.example
+infra/keys/
+*.pem
+*.key
+frontend/build/
+frontend/.svelte-kit/
+.minio-data/

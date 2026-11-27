@@ -1,0 +1,69 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/resolver.json",
+  "name": "frontend",
+  "version": "2025.10",
+  "resolutionOrder": [
+    {
+      "$ref": "#/sets/foundation"
+    },
+    {
+      "$ref": "#/modifiers/theme"
+    }
+  ],
+  "sets": {
+    "foundation": {
+      "sources": [
+        {
+          "$ref": "primitive/color.tokens.json"
+        },
+        {
+          "$ref": "primitive/space.tokens.json"
+        },
+        {
+          "$ref": "primitive/radius.tokens.json"
+        },
+        {
+          "$ref": "primitive/type.tokens.json"
+        },
+        {
+          "$ref": "primitive/motion.tokens.json"
+        },
+        {
+          "$ref": "primitive/font.tokens.json"
+        },
+        {
+          "$ref": "semantic/space.tokens.json"
+        },
+        {
+          "$ref": "semantic/radius.tokens.json"
+        },
+        {
+          "$ref": "semantic/font.tokens.json"
+        },
+        {
+          "$ref": "semantic/motion.tokens.json"
+        },
+        {
+          "$ref": "component/control.tokens.json"
+        }
+      ]
+    }
+  },
+  "modifiers": {
+    "theme": {
+      "default": "light",
+      "contexts": {
+        "light": [
+          {
+            "$ref": "themes/light.tokens.json"
+          }
+        ],
+        "dark": [
+          {
+            "$ref": "themes/dark.tokens.json"
+          }
+        ]
+      }
+    }
+  }
+}

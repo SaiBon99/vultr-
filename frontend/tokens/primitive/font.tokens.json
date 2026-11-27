@@ -1,0 +1,24 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "primitive": {
+    "font": {
+      "$type": "fontFamily",
+      "geist": {
+        "$value": [
+          "Geist Variable",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif"
+        ]
+      },
+      "geist-mono": {
+        "$value": [
+          "Geist Mono Variable",
+          "ui-monospace",
+          "SFMono-Regular",
+          "monospace"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "font": {
+    "$type": "fontFamily",
+    "display": {
+      "$value": "{primitive.font.geist}",
+      "$description": "Hero and large display headings"
+    },
+    "title": {
+      "$value": "{primitive.font.geist}",
+      "$description": "Headings and titles"
+    },
+    "content": {
+      "$value": "{primitive.font.geist}",
+      "$description": "Body text and UI copy"
+    },
+    "mono": {
+      "$value": "{primitive.font.geist-mono}",
+      "$description": "Code and tabular numbers"
+    },
+    "sans": {
+      "$value": "{primitive.font.geist}",
+      "$description": "Alias of content for Tailwind defaults"
+    }
+  }
+}

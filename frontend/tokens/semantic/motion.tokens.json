@@ -1,0 +1,43 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "motion": {
+    "duration": {
+      "$type": "duration",
+      "fast": {
+        "$value": "{primitive.duration.fast}",
+        "$description": "Hover and press feedback"
+      },
+      "base": {
+        "$value": "{primitive.duration.base}",
+        "$description": "Most UI transitions"
+      },
+      "slow": {
+        "$value": "{primitive.duration.slow}",
+        "$description": "Large surfaces and overlays"
+      },
+      "slower": {
+        "$value": "{primitive.duration.slower}",
+        "$description": "Page-level and staged sequences"
+      }
+    }
+  },
+  "ease": {
+    "$type": "cubicBezier",
+    "standard": {
+      "$value": "{primitive.ease.standard}",
+      "$description": "Default movement between states"
+    },
+    "out": {
+      "$value": "{primitive.ease.out}",
+      "$description": "Entrances and responses to input"
+    },
+    "in-out": {
+      "$value": "{primitive.ease.in-out}",
+      "$description": "Moves that stay on screen"
+    },
+    "in": {
+      "$value": "{primitive.ease.in}",
+      "$description": "Exits"
+    }
+  }
+}

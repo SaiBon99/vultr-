@@ -1,0 +1,17 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
+  "spacing": {
+    "$type": "dimension",
+    "control": {
+      "$value": {
+        "value": 2.25,
+        "unit": "rem"
+      },
+      "$description": "Height of buttons, inputs and selects"
+    },
+    "control-inset": {
+      "$value": "{primitive.space.4}",
+      "$description": "Horizontal padding inside controls"
+    }
+  }
+}
