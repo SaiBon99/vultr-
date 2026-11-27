@@ -62,8 +62,10 @@ check() {
   [ "$code" = 401 ]
 }
 [ -f .releases/last-good.tgz ] || { echo "no last-good release on the VM" >&2; exit 1; }
+rm -rf .incoming/stage && mkdir -p .incoming/stage/last &&
+tar -x -f .releases/last-good.tgz -C .incoming/stage/last &&
 rm -rf frontend/build &&
-tar -x --no-same-owner --no-same-permissions --touch -f .releases/last-good.tgz -C "$APP" &&
+cp -r --no-preserve=mode,ownership,timestamps .incoming/stage/last/. "$APP"/ &&
 sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend" &&
 sudo -n /usr/bin/systemctl restart quarantine-api || { echo "rollback failed to restore" >&2; exit 1; }
 check || { echo "rolled back, but checks fail; check journalctl -u quarantine-api" >&2; exit 1; }
@@ -142,14 +144,21 @@ restart_app() {
   sudo -n -u runner /home/runner/.local/bin/uv sync --frozen --no-dev --project "$APP/backend" &&
   sudo -n /usr/bin/systemctl restart quarantine-api
 }
+# tar cannot restore modes on runner-owned directories as deploy, so each tree is extracted into a
+# fresh staging dir first and then copied in without touching existing directory modes.
 extract_new() {
-  tar -x --no-same-owner --no-same-permissions --touch -f .incoming/code.tgz -C "$APP" &&
-  rm -rf frontend/build && mkdir -p frontend/build &&
-  tar -x --no-same-owner --no-same-permissions --touch -f .incoming/frontend.tgz -C frontend/build
+  rm -rf .incoming/stage && mkdir -p .incoming/stage/code .incoming/stage/frontend &&
+  tar -x -f .incoming/code.tgz -C .incoming/stage/code &&
+  tar -x -f .incoming/frontend.tgz -C .incoming/stage/frontend &&
+  cp -r --no-preserve=mode,ownership,timestamps .incoming/stage/code/. "$APP"/ &&
+  rm -rf frontend/build && mkdir frontend/build &&
+  cp -r --no-preserve=mode,ownership,timestamps .incoming/stage/frontend/. frontend/build/
 }
 restore_last_good() {
+  rm -rf .incoming/stage && mkdir -p .incoming/stage/last &&
+  tar -x -f .releases/last-good.tgz -C .incoming/stage/last &&
   rm -rf frontend/build &&
-  tar -x --no-same-owner --no-same-permissions --touch -f .releases/last-good.tgz -C "$APP" &&
+  cp -r --no-preserve=mode,ownership,timestamps .incoming/stage/last/. "$APP"/ &&
   restart_app
 }
 
