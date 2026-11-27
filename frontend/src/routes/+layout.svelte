@@ -11,7 +11,7 @@
   let { children }: LayoutProps = $props();
 
   const links = [
-    { href: "/", label: "Quarantine" },
+    { href: "/", label: "Review" },
     { href: "/audit", label: "Audit log" },
     { href: "/crawl", label: "Crawl" },
   ] as const;
@@ -23,14 +23,14 @@
   <title>Memory Quarantine</title>
 </svelte:head>
 
-<div class="min-h-screen bg-background font-content text-foreground">
+<div class="min-h-dvh bg-background font-content text-foreground">
   <header class="border-b border-border bg-card">
-    <div class="mx-auto flex max-w-5xl items-center justify-between gap-md px-md py-sm">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-md gap-y-xs px-md py-sm">
       <a href={resolve("/")} class="flex items-center gap-xs font-title font-semibold">
         <ShieldCheck class="size-5 text-primary" aria-hidden="true" />
         Memory Quarantine
       </a>
-      <nav aria-label="Primary" class="flex items-center gap-xs">
+      <nav aria-label="Primary" class="flex flex-wrap items-center gap-xs">
         {#each links as link (link.href)}
           {@const current = page.url.pathname.replace(/\/$/, "") === resolve(link.href).replace(/\/$/, "")}
           <a
@@ -47,7 +47,7 @@
       </nav>
     </div>
   </header>
-  <main class="mx-auto max-w-5xl px-md py-lg">
+  <main class="mx-auto max-w-7xl px-md py-lg">
     {@render children()}
   </main>
 </div>
