@@ -66,8 +66,10 @@ REMOTE
 fi
 
 step "preconditions"
-if [ "$ALLOW_DIRTY" -eq 0 ] && { ! git -C "$REPO_ROOT" diff --quiet || ! git -C "$REPO_ROOT" diff --cached --quiet; }; then
-  echo "working tree has uncommitted changes; commit them or pass --allow-dirty (the build will not match HEAD)" >&2
+# Only the paths that make up the release matter; unrelated edits elsewhere in the repo are fine.
+RELEASE_PATHS=(backend contracts infra openspec frontend)
+if [ "$ALLOW_DIRTY" -eq 0 ] && [ -n "$(git -C "$REPO_ROOT" status --porcelain -- "${RELEASE_PATHS[@]}")" ]; then
+  echo "release paths have uncommitted changes; commit them or pass --allow-dirty (the build will not match HEAD)" >&2
   exit 1
 fi
 [ "$ALLOW_DIRTY" -eq 0 ] || echo "WARNING: --allow-dirty; the frontend build may not match HEAD" >&2
