@@ -3,6 +3,7 @@
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 CLEAN_USER = "CLEAN_USER"
 TAINTED_UNREVIEWED = "TAINTED_UNREVIEWED"
@@ -35,7 +36,9 @@ _DIRECTIVE = re.compile(
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@([A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)+)")
-_URL = re.compile(r"\bhttps?://([^\s/:?#\"'<>]+)", re.IGNORECASE)
+# Match the whole URL, then let urlsplit find the host, so userinfo (https://good.com:x@evil.com)
+# cannot smuggle an allowlisted name past the check. Also catches protocol-relative //host links.
+_URL = re.compile(r"(?:\bhttps?:|(?<![:\w/]))//[^\s\"'<>]+", re.IGNORECASE)
 _SENSITIVE_TOOL = re.compile(
     r"\b(?:send_email|send_mail|forward_email|share_file|transfer_funds|run_shell"
     r"|execute_command|http_post|delete_\w+)\b",
@@ -77,7 +80,15 @@ def _has_external_email(text: str, allowlist: frozenset[str]) -> bool:
 
 
 def _has_external_url(text: str, allowlist: frozenset[str]) -> bool:
-    return any(not _allowed(m.group(1), allowlist) for m in _URL.finditer(text))
+    for m in _URL.finditer(text):
+        raw = m.group(0)
+        try:
+            host = urlsplit("http:" + raw if raw.startswith("//") else raw).hostname
+        except ValueError:
+            return True  # unparseable URL: treat as external (fail closed)
+        if not host or not _allowed(host, allowlist):
+            return True
+    return False
 
 
 def _canary_overlap(text: str, canaries: frozenset[str]) -> bool:

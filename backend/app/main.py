@@ -9,7 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.config import Settings, get_settings
+from app.config import REPO_ROOT, Settings, get_settings
 from app.db import Database
 from app.deps import ApiError
 from app.receipts import S3ObjectStore, Signer
@@ -31,8 +31,15 @@ def _build_store(settings: Settings) -> S3ObjectStore | None:
 
 
 def _build_signer(settings: Settings) -> Signer | None:
-    path = settings.RECEIPT_SIGNING_KEY_PATH
-    return Signer.from_path(path) if path and Path(path).is_file() else None
+    """No path configured: no signer (tests, mock). Configured but missing: fail at startup."""
+    if not settings.RECEIPT_SIGNING_KEY_PATH:
+        return None
+    path = Path(settings.RECEIPT_SIGNING_KEY_PATH)
+    if not path.is_absolute():
+        path = REPO_ROOT / path  # .env.example paths are relative to the repo root
+    if not path.is_file():
+        raise RuntimeError(f"RECEIPT_SIGNING_KEY_PATH does not exist: {path}")
+    return Signer.from_path(str(path))
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

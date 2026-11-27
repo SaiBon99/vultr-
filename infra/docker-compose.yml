@@ -10,7 +10,7 @@ services:
       PROXY_DB_PASSWORD: ${PROXY_DB_PASSWORD:-proxy_local_pw}
       READER_DB_PASSWORD: ${READER_DB_PASSWORD:-reader_local_pw}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./sql:/sql:ro
@@ -29,8 +29,8 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
   # One-shot bucket creation, idempotent. The image has no shell, so it retries via restart until MinIO is up.

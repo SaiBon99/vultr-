@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS audit_events_prev_hash_uniq ON audit_events (prev_hash); -- one successor per link: concurrent appends conflict instead of forking the chain
+
 CREATE OR REPLACE FUNCTION audit_events_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'audit_events is append-only'; END $$;
 DROP TRIGGER IF EXISTS audit_events_no_mutation ON audit_events;

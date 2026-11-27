@@ -1,13 +1,19 @@
 """Settings from environment. Names follow docs/Execution Plan.md."""
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # Absolute paths so the cwd (backend/, repo root, systemd WorkingDirectory) does not matter.
+    model_config = SettingsConfigDict(
+        env_file=(REPO_ROOT / "infra" / ".env", REPO_ROOT / "backend" / ".env"), extra="ignore"
+    )
 
     HOST_SECRET: SecretStr = SecretStr("")
     REVIEWER_TOKEN: SecretStr = SecretStr("")

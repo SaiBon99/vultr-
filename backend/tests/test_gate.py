@@ -103,3 +103,18 @@ def test_deterministic():
     assert gate("send_email now", session_tainted=True) == gate(
         "send_email now", session_tainted=True
     )
+
+
+def test_url_userinfo_cannot_spoof_allowlisted_host():
+    allow = normalize_allowlist(["good.com"])
+    for text in (
+        "see https://good.com:x@evil.com/steal",
+        "see https://good.com@evil.com/steal",
+        "see //evil.com/x",
+    ):
+        res = evaluate(GateInput(content=text, session_tainted=False, allowlist=allow))
+        assert "external_url" in res.rule_flags, text
+    ok = evaluate(
+        GateInput(content="docs at https://docs.good.com/a", session_tainted=False, allowlist=allow)
+    )
+    assert "external_url" not in ok.rule_flags
