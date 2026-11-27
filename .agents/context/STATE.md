@@ -10,6 +10,7 @@ Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, se
 - /crawl live on the VM (ticket 07, 2026-11-27): `main` @ 4ee066e as `quarantine-api.service` at `http://45.77.138.3:8000`; old `vultr-app` disabled, kept for rollback. One run against example.com: 200 in 2.1 s, network none, container removed.
 - Frontend `/crawl` page and live build (ticket 09): same-origin `/ui`, verdict names moved to contracts 0.2.1. CI workflow `deploy.yml` publishes on push to `main` via `infra/scripts/publish.sh`, rolls back on failed checks.
 - Run logs (D9; contracts 0.2.2, change `add-run-logs`, tickets 01-16 in `.scratch/add-run-logs/issues/`): every /crawl run that took a slot writes a redacted, capped NDJSON transcript to `logs/crawl/<run_id>.jsonl`; 502/504 carry `run_id`; `GET /crawl/runs/{run_id}/log` (reviewer); `/ui/crawl` viewer. 24 tests in `test_crawl_runlog.py`. Local e2e 2026-11-27 against MinIO and the real Docker sandbox: smoke_check 7/7 incl. logs probe; example.com 200 with log_uri, sha256 metadata matches GET bytes, no secrets in the object; a 404 page gives 502 fetch_failed with run_id and an error run_end; MinIO stopped gives 200 `log_uri: null` and one warning line. `setup_object_storage.py` idempotent on MinIO.
+- Run logs live on Vultr (ticket 17, 2026-11-27, `98e8f43` via publish.sh): Object Storage `quarantine-objects` on ams1 (cluster 6, Standard tier, $18/mo; VM is in ams), bucket `quarantine-receipts`, path style, `S3_REGION=ams1`; S3_* in `/opt/vultr-app/.env` (600, runner). setup_object_storage.py passed twice on the live bucket (second run: no changes); only lifecycle rule is `expire-run-logs` on `logs/`, 30 days. /health object_storage ok; a real crawl of example.com (real inference, 2.5 s) wrote `logs/crawl/<run_id>.jsonl`, GET log 200 with sha256 matching the bucket metadata, no secrets in the object.
 - Frontend shell (pre-D5 types): adapter-static at `/ui`, mock adapter, Web Crypto verification; `check:unified` passes.
 
 ## Not working or unverified
@@ -20,12 +21,12 @@ Rewrite; do not append. Behaviour lives in SPECS.md, reasons in DECISIONS.md, se
 - /crawl live proof not done. closed when: ticket 08 (checklist written, `docker inspect` mid-run, journal line, Vultr usage, repeated by a second person) in `.scratch/add-crawl-endpoint/issues/` is done.
 - /crawl latency measured once (2.1 s, example.com). closed when: ticket 08 records latency across several runs; regular 504s open a contract change instead of a config edit.
 - /crawl fetch is logged only, not recorded as `external_read`. closed when: Phase 1 DB repositories land and the broker fetch appends an audit event.
-- Run logs not live on Vultr. closed when: ticket 17 (`.scratch/add-run-logs/issues/17-live-hookup.md`) records the Object Storage region, setup_object_storage.py passes twice on the live bucket, and one live crawl's log is readable via the GET route and `/ui/crawl`.
-- Run-log local e2e used a stub model endpoint (no local inference key). closed when: one crawl with the real Vultr inference key writes a log whose `host` model event carries a real inference_id (ticket 17 live check covers it).
+- Live `/ui/crawl` run-log viewer not looked at in a browser. closed when: a reviewer opens a crawl's run log on http://45.77.138.3:8000/ui/crawl/ and it renders.
+- `98e8f43` was pushed with `[skip ci]` and deployed by hand, so CI has not run on it. closed when: the next CI run on main passes.
 - Vultr resources (Object Storage cluster lookup is real; other placeholders in vultr_provision.sh). closed when: Gate 2 `demo_smoke.py` passes on the live stack.
 
 ## Next
 1. Phase 1 in parallel: infra, backend, frontend per the change tasks.
 2. Archive `refine-verdicts-and-rulebook` once Gate 1 passes.
 3. Apply `embedding-fail-closed` (new `embedding_unavailable` flag, contracts 0.3.0) after that archive.
-4. `add-run-logs` live hookup (ticket 17, needs the user's cost confirmation and keys), then archive the change.
+4. Archive `add-run-logs` once the live viewer is confirmed.

@@ -31,11 +31,11 @@
 - [x] 5.2 STATE.md and LEARNINGS.md updated; `record_check.mjs` passes
 
 ## 6. Live hookup (admin, keys)
-- [ ] 6.1 VM region found; Object Storage region chosen and recorded
-- [ ] 6.2 Subscription created after user confirmation (billable)
-- [ ] 6.3 Live EnvironmentFile found via `systemctl cat quarantine-api`; S3_* set, mode 600, nothing echoed
-- [ ] 6.4 setup_object_storage.py passes twice (second run: no changes), lifecycle `logs/` 30 days or warning recorded
-- [ ] 6.5 Change deployed to the VM (CI on main or publish.sh); service restarted
+- [x] 6.1 VM region found; Object Storage region chosen and recorded
+- [x] 6.2 Subscription created after user confirmation (billable)
+- [x] 6.3 Live EnvironmentFile found via `systemctl cat quarantine-api`; S3_* set, mode 600, nothing echoed
+- [x] 6.4 setup_object_storage.py passes twice (second run: no changes), lifecycle `logs/` 30 days or warning recorded
+- [x] 6.5 Change deployed to the VM (CI on main or publish.sh); service restarted
 
 ## 7. Verification
 - [x] 7.1 Local: compose up; smoke_check passes including the logs probe. Expected: all PASS
@@ -43,6 +43,6 @@
 - [x] 7.3 Local: grep the object for the reviewer token and inference key. Expected: no match
 - [x] 7.4 Local: crawl a URL that returns 404. Expected: 502 fetch_failed with `run_id`; the log ends with `run_end` status error
 - [x] 7.5 Local: stop MinIO and crawl. Expected: 200 with `log_uri: null`, one warning line on the host
-- [ ] 7.6 Live: GET /health. Expected: `object_storage: ok`
-- [ ] 7.7 Live: one crawl. Expected: the object exists under `logs/crawl/` in the Vultr bucket (S3 list); GET log 200; `/ui/crawl` shows the log
-- [ ] 7.8 Live: the `receipts/` prefix has no lifecycle rule. Expected: the only rule filters on `logs/`
+- [x] 7.6 Live: GET /health. Expected: `object_storage: ok`
+- [x] 7.7 Live: one crawl. Expected: the object exists under `logs/crawl/` in the Vultr bucket (S3 list); GET log 200; `/ui/crawl` shows the log
+- [x] 7.8 Live: the `receipts/` prefix has no lifecycle rule. Expected: the only rule filters on `logs/`
